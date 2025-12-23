@@ -1,111 +1,81 @@
-# PaL.X - Plateforme de Communication Sécurisée
+# PaL.X - Plateforme de Communication Unifiée
 
-PaL.X est une solution complète de messagerie instantanée, d'appels vocaux et vidéo, conçue avec **.NET 9**. Elle se compose d'un client lourd (WinForms), d'une interface d'administration et d'une API robuste.
+PaL.X est une suite de communication complète et moderne développée en **.NET 9**. Elle offre une expérience utilisateur riche combinant messagerie instantanée, partage multimédia et appels vidéo haute définition, le tout sécurisé par une architecture robuste.
 
 ![PaL.X Banner](https://via.placeholder.com/800x200?text=PaL.X+Communication+Platform)
 
-## 🚀 Fonctionnalités Principales
+## 🌟 Fonctionnalités Détaillées
 
-### 💬 Messagerie Instantanée
-*   Chat en temps réel via **SignalR**.
-*   Support du texte riche (RTF), emojis et envoi de fichiers.
-*   Historique des conversations persistant (PostgreSQL).
-*   Statuts utilisateur (En ligne, Absent, Ne pas déranger, etc.).
+### 💬 Messagerie & Chat Complet
+Une expérience de chat fluide et interactive :
+*   **Messagerie Instantanée** : Échanges en temps réel ultra-rapides via **SignalR**.
+*   **Smileys & Émojis** : Support étendu de packs de smileys (Basic, Premium, Animés) pour enrichir les conversations.
+*   **Mise en forme** : Support du texte riche (couleurs, polices, styles).
+*   **Statuts de Présence** : Gestion dynamique des statuts (En ligne, Occupé, Absent, Invisible).
 
-### 📹 Appels Vidéo & Audio
-*   **Nouveau :** Appels vidéo haute qualité via **WebRTC** (intégré via WebView2).
-*   Appels vocaux fluides.
-*   Interface d'appel moderne (Dark Theme) avec gestion Caméra/Micro.
-*   Signalisation P2P sécurisée.
+### 📂 Partage Multimédia Avancé
+PaL.X va au-delà du simple texte :
+*   **Transfert de Fichiers** : Envoi et réception de tout type de documents avec barre de progression.
+*   **Partage d'Images** : Prévisualisation et envoi rapide de photos directement dans le chat.
+*   **Messages Audio** : Enregistrement vocal intégré et lecteur audio natif pour envoyer des notes vocales.
 
-### 🛡️ Administration
-*   Dashboard de gestion des utilisateurs et des sessions.
-*   Contrôle du service (Démarrage/Arrêt du backend).
-*   Logs et surveillance de l'activité en temps réel.
+### 📹 Appels Vidéo & Audio (WebRTC)
+Communication en temps réel de nouvelle génération :
+*   **Technologie WebRTC** : Appels vidéo P2P haute qualité et faible latence (via WebView2).
+*   **Interface Moderne** : Fenêtre d'appel "Dark Theme" immersive.
+*   **Contrôles Complets** : Gestion du micro, de la caméra et bascule plein écran.
+*   **Menu Contextuel** : Lancement rapide d'appels depuis la liste d'amis.
+
+### 🛡️ Confidentialité & Gestion des Contacts
+Un contrôle total sur vos interactions :
+*   **Système d'Amis** : Recherche, demande d'ajout et gestion de la liste de contacts.
+*   **Système de Blocage Avancé** : 
+    *   Bloquez les utilisateurs indésirables pour empêcher tout contact (messages ou appels).
+    *   Gestionnaire de liste noire (Blacklist) accessible depuis les paramètres.
+    *   Protection immédiate de la vie privée.
+
+### 🔧 Administration Système
+Un panneau de contrôle puissant pour les administrateurs :
+*   **Dashboard** : Vue d'ensemble des utilisateurs connectés et de l'état du serveur.
+*   **Contrôle de Service** : Démarrage et arrêt du backend API à la demande.
+*   **Logs Système** : Suivi des événements et diagnostics en temps réel.
 
 ---
 
-## 🛠️ Stack Technique
+## 🛠️ Architecture Technique
 
-*   **Backend** : ASP.NET Core 9.0, Entity Framework Core, SignalR.
-*   **Frontend** : Windows Forms (.NET 9), WebView2 (pour WebRTC).
-*   **Base de données** : PostgreSQL.
-*   **Protocoles** : HTTPS (5001), WSS (Secure WebSocket), WebRTC.
+Le projet repose sur une stack technologique de pointe :
+
+*   **Core Framework** : .NET 9.0 (Dernière version LTS).
+*   **Backend API** : ASP.NET Core Web API.
+*   **Communication** : SignalR (WebSocket) & WebRTC (Vidéo).
+*   **Client Desktop** : Windows Forms (WinForms) modernisé.
+*   **Base de Données** : PostgreSQL avec Entity Framework Core.
+*   **Sécurité** : Authentification JWT, HTTPS (Port 5001).
 
 ---
 
 ## ⚙️ Prérequis
 
+Pour exécuter PaL.X, assurez-vous d'avoir :
 1.  **SDK .NET 9.0** installé.
-2.  **PostgreSQL** (v13 ou supérieur) en cours d'exécution.
-3.  **WebView2 Runtime** (généralement préinstallé sur Windows 10/11).
+2.  **PostgreSQL** (v13+) en cours d'exécution.
+3.  **WebView2 Runtime** (Standard sur Windows 10/11).
 
 ---
 
-## 🔧 Installation et Configuration
+## 🚀 Installation Rapide
 
-### 1. Base de Données
-Créez une base de données vide nommée `PaL.X` dans PostgreSQL.
-La chaîne de connexion par défaut est configurée pour un utilisateur `postgres` avec le mot de passe `2012704`.
-*Pour modifier cela, éditez `src/PaL.X.Api/appsettings.Development.json`.*
+1.  **Base de Données** :
+    Créez une base vide PaL.X dans PostgreSQL.
+    *(Config par défaut : User postgres / Pass 2012704)*
 
-### 2. Certificat HTTPS
-Le projet utilise désormais exclusivement HTTPS sur le port **5001**. Assurez-vous de faire confiance au certificat de développement :
-```powershell
-dotnet dev-certs https --trust
-```
+2.  **Démarrage** :
+    Utilisez le script start_all.bat à la racine pour lancer l'environnement complet (API + Client + Admin).
 
-### 3. Démarrage Rapide
-Un script est disponible à la racine pour lancer l'environnement complet :
-```bat
-start_all.bat
-```
-*Cela lancera l'API, le Client et l'Admin.*
+3.  **Premier Login** :
+    Créez un compte via l'interface client ou utilisez les comptes de test si générés.
 
 ---
 
-## ▶️ Démarrage Manuel
-
-### API (Backend)
-L'API écoute sur `https://localhost:5001` et `http://localhost:5000`.
-```bash
-cd src/PaL.X.Api
-dotnet run --launch-profile https
-```
-
-### Interface Admin
-Permet de gérer le service.
-```bash
-cd src/PaL.X.Admin
-dotnet run
-```
-*Note : Vous pouvez démarrer/arrêter le backend directement depuis l'écran de login de l'Admin.*
-
-### Client Utilisateur
-```bash
-cd src/PaL.X.Client
-dotnet run
-```
-
----
-
-## 🔍 Dépannage
-
-**L'API ne démarre pas (Erreur DB)**
-*   Vérifiez que le service PostgreSQL est lancé.
-*   Vérifiez le mot de passe dans `appsettings.Development.json`.
-
-**Warning HTTPS au démarrage**
-*   Si vous voyez "Failed to determine the https port", assurez-vous d'avoir exécuté `dotnet dev-certs https --trust`.
-
-**Écran noir en appel vidéo**
-*   Vérifiez que vous avez autorisé l'accès Caméra/Micro si Windows le demande.
-*   Assurez-vous que le runtime WebView2 est à jour.
-
----
-
-## 👥 Auteurs
-*   **DeLTa-X-Tunisia** - *Développement Principal*
-
----
-*Projet développé sous .NET 9 - 2025*
+*Développé avec passion sur .NET 9.*
