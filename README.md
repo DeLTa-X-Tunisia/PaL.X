@@ -1,4 +1,31 @@
-# PaL.X - Plateforme de Communication Unifiée
+<div align="center">
+
+# 💬 # PaL.X - Plateforme de Communication Unifiée
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Author-Azizi%20Mounir-blue?style=for-the-badge" alt="Author: Azizi Mounir">
+  <img src="https://upload.wikimedia.org/wikipedia/commons/c/ce/Flag_of_Tunisia.svg" alt="Flag of Tunisia" width="60" height="40">
+  <img src="https://img.shields.io/badge/Phone-%2B216%20XX%20XXX%20XXX-006400?style=for-the-badge" alt="Phone: +216 27 774075">
+</p>
+
+### *Private and Lightweight eXchange — 100% C# / .NET*
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![.NET 9](https://img.shields.io/badge/.NET-9.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
+[![SignalR](https://img.shields.io/badge/SignalR-Real--Time-8A2BE2?logo=microsoft)](https://dotnet.microsoft.com/apps/aspnet/signalr)
+[![WebRTC](https://img.shields.io/badge/WebRTC-Enabled-00D084?logo=webrtc)](https://webrtc.org/)
+
+![UI/UX Custom](https://img.shields.io/badge/UI%2FUX-Custom%20Design-orange?style=for-the-badge)
+![Code Optimisé](https://img.shields.io/badge/Code-Optimisé%20C%23-brightgreen?style=for-the-badge)
+
+[![Enterprise Scale](https://img.shields.io/badge/Enterprise-500K%20Users-FF6B6B?style=for-the-badge&logo=rocket)](README.md#enterprise-scale)
+[![Zero-Cost](https://img.shields.io/badge/Deployment-Zero%20Cost-4CAF50?style=for-the-badge)](README.md#deployment)
+
+[![Bugs Squashed](https://img.shields.io/badge/Bugs%20Squashed-∞-success?logo=github)](docs/troubleshooting.md)
+[![Coffee Consumed](https://img.shields.io/badge/Coffee%20Consumed-%E2%98%95%20%E2%98%95%20%E2%98%95-brown)](https://en.wikipedia.org/wiki/Coffee)
+[![Code Quality](https://img.shields.io/badge/Code%20Quality-Chef's%20Kiss-ff69b4?logo=chef)](https://github.com/DeLTa-X-Tunisia/PaL.X)
+</div>
+
 
 PaL.X est une suite de communication complète et moderne développée en **.NET 9**. Elle offre une expérience utilisateur riche combinant messagerie instantanée, partage multimédia et appels vidéo haute définition, le tout sécurisé par une architecture robuste.
 
