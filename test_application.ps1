@@ -51,7 +51,7 @@ try {
         Start-Sleep -Seconds 10
         
         # Test de l'API
-        $apiTest = Invoke-RestMethod -Uri "https://localhost:7109/api/service/check" -Method Get -SkipCertificateCheck -ErrorAction SilentlyContinue
+        $apiTest = Invoke-RestMethod -Uri "https://localhost:5001/api/service/check" -Method Get -SkipCertificateCheck -ErrorAction SilentlyContinue
         if ($apiTest) {
             Write-Host "   ✓ API démarrée avec succès" -ForegroundColor Green
         } else {

@@ -14,6 +14,7 @@ namespace PaL.X.Api.Services
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<MessageCleanupService> _logger;
         private readonly TimeSpan _cleanupInterval = TimeSpan.FromHours(24); // Run once a day
+        private readonly TimeSpan _errorBackoff = TimeSpan.FromSeconds(15);
         private readonly int _retentionDays = 30; // Default 30 days
 
         public MessageCleanupService(IServiceProvider serviceProvider, ILogger<MessageCleanupService> logger)
@@ -47,6 +48,15 @@ namespace PaL.X.Api.Services
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error occurred during message cleanup.");
+                    try
+                    {
+                        await Task.Delay(_errorBackoff, stoppingToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // shutting down
+                    }
+                    continue;
                 }
 
                 await Task.Delay(_cleanupInterval, stoppingToken);

@@ -29,11 +29,16 @@ namespace PaL.X.Admin
                 var psi = new ProcessStartInfo
                 {
                     FileName = apiPath,
-                    Arguments = "--urls \"http://localhost:5024\"", // Forcer le port 5024
+                    Arguments = "--urls \"https://localhost:5001;http://localhost:5000\"",
                     UseShellExecute = false,
                     CreateNoWindow = true, // Masquer la console
                     WorkingDirectory = Path.GetDirectoryName(apiPath)
                 };
+
+                // Important: when launching the .exe directly, launchSettings.json is NOT applied.
+                // Force Development so appsettings.Development.json is used.
+                psi.EnvironmentVariables["ASPNETCORE_ENVIRONMENT"] = "Development";
+                psi.EnvironmentVariables["DOTNET_ENVIRONMENT"] = "Development";
 
                 _process = Process.Start(psi);
             }

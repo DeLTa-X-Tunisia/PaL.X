@@ -168,6 +168,11 @@ namespace PaL.X.Client.Controls
                 return;
             }
 
+            if (_contentType == "video_call_event" && TryAddVideoCallEvent(messageContent))
+            {
+                return;
+            }
+
             if (smileyFilenames != null)
             {
                 ParseAndAddContentWithSmileys(messageContent, smileyFilenames);
@@ -178,6 +183,70 @@ namespace PaL.X.Client.Controls
             }
 
             SetupTextContextMenu(plainTextForCopy);
+        }
+
+        private bool TryAddVideoCallEvent(string content)
+        {
+            if (string.IsNullOrWhiteSpace(content)) return false;
+
+            VideoCallEventDto? evt = null;
+            try
+            {
+                evt = JsonSerializer.Deserialize<VideoCallEventDto>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch
+            {
+                return false;
+            }
+
+            if (evt == null || string.IsNullOrWhiteSpace(evt.EventType))
+            {
+                return false;
+            }
+
+            var whenLocal = (evt.AtUtc == default ? DateTime.UtcNow : evt.AtUtc).ToLocalTime();
+            var isStart = evt.EventType.Trim().Equals("started", StringComparison.OrdinalIgnoreCase);
+            var label = isStart
+                ? $"Appel vidéo démarré .. {whenLocal:HH:mm}"
+                : $"Appel vidéo terminé .. {whenLocal:HH:mm}";
+
+            var iconFile = isStart ? "Msg_Chat_En_Appel_Video.png" : "Msg_Chat_Appel_Video_Terminé.png";
+            var iconPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Video CaLL", iconFile);
+            var icon = TryLoadIcon(iconPath);
+
+            var container = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Margin = new Padding(0, 4, 0, 4),
+                Padding = new Padding(6),
+                BackColor = Color.FromArgb(245, 246, 248)
+            };
+
+            var pic = new PictureBox
+            {
+                Size = new Size(44, 44),
+                SizeMode = PictureBoxSizeMode.Zoom,
+                Image = icon,
+                Margin = new Padding(4)
+            };
+
+            var lbl = new Label
+            {
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9, FontStyle.Regular),
+                Text = label,
+                ForeColor = Color.FromArgb(40, 40, 40),
+                Margin = new Padding(4, 14, 4, 4)
+            };
+
+            container.Controls.Add(pic);
+            container.Controls.Add(lbl);
+            container.FlowDirection = FlowDirection.LeftToRight;
+
+            _flpContent.FlowDirection = FlowDirection.LeftToRight;
+            _flpContent.Controls.Add(container);
+            return true;
         }
 
         private string ExtractPlainTextForCopy(string content)

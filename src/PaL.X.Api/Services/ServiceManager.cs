@@ -854,11 +854,35 @@ namespace PaL.X.Api.Services
             }
         }
 
-        #region Voice call signaling
+        #region Voice/Video call signaling
+
+        private enum CallKind
+        {
+            Voice,
+            Video
+        }
 
         private bool IsUserInActiveCall(int userId)
         {
             return _activeCalls.Values.Any(c => c.Status != CallState.Ended && (c.CallerId == userId || c.CalleeId == userId));
+        }
+
+        private CallKind? GetUserActiveCallKind(int userId)
+        {
+            foreach (var call in _activeCalls.Values)
+            {
+                if (call.Status == CallState.Ended)
+                {
+                    continue;
+                }
+
+                if (call.CallerId == userId || call.CalleeId == userId)
+                {
+                    return call.Kind;
+                }
+            }
+
+            return null;
         }
 
         public async Task<CallInviteDto?> StartCallAsync(string callerConnectionId, int targetUserId)
@@ -903,7 +927,7 @@ namespace PaL.X.Api.Services
             // Si l'appelant ou le destinataire est déjà en appel, rejeter immédiatement
             if (IsUserInActiveCall(caller.UserId) || IsUserInActiveCall(targetUserId))
             {
-                await SendInCallRejectionAsync(caller, targetUserId);
+                await SendBusyRejectionAsync(caller, targetUserId);
                 return null;
             }
 
@@ -944,6 +968,7 @@ namespace PaL.X.Api.Services
                 CallerId = caller.UserId,
                 CalleeId = targetUserId,
                 Status = CallState.Ringing,
+                Kind = CallKind.Voice,
                 StartedAt = invite.SentAt
             };
 
@@ -1006,14 +1031,17 @@ namespace PaL.X.Api.Services
             return true;
         }
 
-        private async Task SendInCallRejectionAsync(ClientInfo caller, int targetUserId)
+        private async Task SendBusyRejectionAsync(ClientInfo caller, int targetUserId)
         {
+            var busyKind = GetUserActiveCallKind(targetUserId) ?? GetUserActiveCallKind(caller.UserId);
+            var reason = busyKind == CallKind.Video ? "VideoInCall" : "InCall";
+
             var payload = new CallRejectDto
             {
                 CallId = Guid.NewGuid().ToString(),
                 FromUserId = targetUserId,
                 ToUserId = caller.UserId,
-                Reason = "InCall",
+                Reason = reason,
                 RejectedAt = DateTime.UtcNow
             };
 
@@ -1180,7 +1208,7 @@ namespace PaL.X.Api.Services
                 return false;
             }
 
-            if (!_activeCalls.TryGetValue(callId, out var call) || call.Status != CallState.InProgress)
+            if (!_activeCalls.TryGetValue(callId, out var call) || call.Status != CallState.InProgress || call.Kind != CallKind.Voice)
             {
                 return false;
             }
@@ -1198,6 +1226,422 @@ namespace PaL.X.Api.Services
 
             await _hubContext.Clients.Clients(targetConnections)
                 .SendAsync("ReceiveAudioFrame", callId, pcmData);
+
+            return true;
+        }
+
+        // ---- Video calls ----
+        public async Task<CallInviteDto?> StartVideoCallAsync(string callerConnectionId, int targetUserId)
+        {
+            if (!_isServiceRunning)
+            {
+                return null;
+            }
+
+            if (!_connectedClients.TryGetValue(callerConnectionId, out var caller))
+            {
+                return null;
+            }
+
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var block = await GetActiveBlockAsync(context, targetUserId, caller.UserId);
+                if (block != null)
+                {
+                    var blockerName = await GetUserDisplayNameAsync(context, targetUserId);
+                    var reminder = BuildBlockReminderMessage(blockerName, block);
+                    await NotifyMessageAttemptBlocked(caller.UserId, targetUserId, reminder, block.IsPermanent, block.BlockedUntil, block.Reason);
+
+                    var payload = new CallRejectDto
+                    {
+                        CallId = Guid.NewGuid().ToString(),
+                        FromUserId = targetUserId,
+                        ToUserId = caller.UserId,
+                        Reason = "Blocked",
+                        RejectedAt = DateTime.UtcNow
+                    };
+
+                    await _hubContext.Clients.Client(callerConnectionId)
+                        .SendAsync("VideoCallRejected", payload);
+                    return null;
+                }
+            }
+
+            // Bloquer tout autre appel pendant un appel vidéo actif, et bloquer l'appel vidéo si l'un est déjà en cours.
+            if (IsUserInActiveCall(caller.UserId) || IsUserInActiveCall(targetUserId))
+            {
+                await SendVideoBusyRejectionAsync(caller, targetUserId);
+                return null;
+            }
+
+            var calleeConnections = _connectedClients.Values
+                .Where(c => c.UserId == targetUserId)
+                .Select(c => c.ConnectionId)
+                .ToList();
+
+            if (!calleeConnections.Any())
+            {
+                var offlinePayload = new CallRejectDto
+                {
+                    CallId = Guid.NewGuid().ToString(),
+                    FromUserId = targetUserId,
+                    ToUserId = caller.UserId,
+                    Reason = "offline",
+                    RejectedAt = DateTime.UtcNow
+                };
+
+                await _hubContext.Clients.Client(callerConnectionId)
+                    .SendAsync("VideoCallRejected", offlinePayload);
+                return null;
+            }
+
+            var invite = new CallInviteDto
+            {
+                CallId = Guid.NewGuid().ToString(),
+                FromUserId = caller.UserId,
+                FromName = string.IsNullOrWhiteSpace(caller.FirstName) ? caller.Username : $"{caller.FirstName} {caller.LastName}".Trim(),
+                ToUserId = targetUserId,
+                SentAt = DateTime.UtcNow
+            };
+
+            var session = new CallSession
+            {
+                CallId = invite.CallId,
+                CallerId = caller.UserId,
+                CalleeId = targetUserId,
+                Status = CallState.Ringing,
+                Kind = CallKind.Video,
+                StartedAt = invite.SentAt
+            };
+
+            _activeCalls[session.CallId] = session;
+
+            await _hubContext.Clients.Clients(calleeConnections)
+                .SendAsync("VideoCallIncoming", invite);
+
+            await _hubContext.Clients.Client(callerConnectionId)
+                .SendAsync("VideoCallOutgoing", invite);
+
+            return invite;
+        }
+
+        private async Task SendVideoBusyRejectionAsync(ClientInfo caller, int targetUserId)
+        {
+            var busyKind = GetUserActiveCallKind(targetUserId) ?? GetUserActiveCallKind(caller.UserId);
+            // Pour l'appel vidéo, distinguer l'occupation vidéo du simple "InCall"
+            var reason = busyKind == CallKind.Video ? "VideoInCall" : "InCall";
+
+            var payload = new CallRejectDto
+            {
+                CallId = Guid.NewGuid().ToString(),
+                FromUserId = targetUserId,
+                ToUserId = caller.UserId,
+                Reason = reason,
+                RejectedAt = DateTime.UtcNow
+            };
+
+            var callerConnections = _connectedClients.Values
+                .Where(c => c.UserId == caller.UserId)
+                .Select(c => c.ConnectionId)
+                .ToList();
+
+            if (callerConnections.Any())
+            {
+                await _hubContext.Clients.Clients(callerConnections)
+                    .SendAsync("VideoCallRejected", payload);
+            }
+        }
+
+        public async Task<bool> AcceptVideoCallAsync(string calleeConnectionId, string callId)
+        {
+            if (!_connectedClients.TryGetValue(calleeConnectionId, out var callee))
+            {
+                return false;
+            }
+
+            if (!_activeCalls.TryGetValue(callId, out var call) || call.CalleeId != callee.UserId || call.Kind != CallKind.Video)
+            {
+                return false;
+            }
+
+            if (call.Status == CallState.Ended)
+            {
+                return false;
+            }
+
+            call.Status = CallState.InProgress;
+            call.AcceptedAt = DateTime.UtcNow;
+            _activeCalls[callId] = call;
+
+            var payload = new CallAcceptDto
+            {
+                CallId = callId,
+                FromUserId = callee.UserId,
+                ToUserId = call.CallerId,
+                AcceptedAt = call.AcceptedAt.Value
+            };
+
+            var callerConnections = _connectedClients.Values
+                .Where(c => c.UserId == call.CallerId)
+                .Select(c => c.ConnectionId)
+                .ToList();
+
+            if (callerConnections.Any())
+            {
+                await _hubContext.Clients.Clients(callerConnections)
+                    .SendAsync("VideoCallAccepted", payload);
+            }
+
+            await _hubContext.Clients.Client(calleeConnectionId)
+                .SendAsync("VideoCallAccepted", payload);
+
+            return true;
+        }
+
+        public async Task<bool> RejectVideoCallAsync(string calleeConnectionId, string callId, string reason = "refused")
+        {
+            if (!_connectedClients.TryGetValue(calleeConnectionId, out var callee))
+            {
+                return false;
+            }
+
+            if (!_activeCalls.TryRemove(callId, out var call) || call.CalleeId != callee.UserId || call.Kind != CallKind.Video)
+            {
+                return false;
+            }
+
+            call.EndedAt = DateTime.UtcNow;
+            call.EndReason = reason;
+            call.Status = CallState.Ended;
+
+            var payload = new CallRejectDto
+            {
+                CallId = callId,
+                FromUserId = callee.UserId,
+                ToUserId = call.CallerId,
+                Reason = reason,
+                RejectedAt = call.EndedAt.Value
+            };
+
+            var callerConnections = _connectedClients.Values
+                .Where(c => c.UserId == call.CallerId)
+                .Select(c => c.ConnectionId)
+                .ToList();
+
+            if (callerConnections.Any())
+            {
+                await _hubContext.Clients.Clients(callerConnections)
+                    .SendAsync("VideoCallRejected", payload);
+            }
+
+            await _hubContext.Clients.Client(calleeConnectionId)
+                .SendAsync("VideoCallRejected", payload);
+            return true;
+        }
+
+        public async Task<bool> CancelVideoCallAsync(string callerConnectionId, string callId, string reason = "cancelled")
+        {
+            if (!_connectedClients.TryGetValue(callerConnectionId, out var caller))
+            {
+                return false;
+            }
+
+            if (!_activeCalls.TryRemove(callId, out var call) || call.CallerId != caller.UserId || call.Kind != CallKind.Video)
+            {
+                return false;
+            }
+
+            call.EndedAt = DateTime.UtcNow;
+            call.EndReason = reason;
+            call.Status = CallState.Ended;
+
+            var payload = new CallEndDto
+            {
+                CallId = callId,
+                FromUserId = caller.UserId,
+                ToUserId = call.CalleeId,
+                Reason = reason,
+                EndedAt = call.EndedAt.Value
+            };
+
+            var calleeConnections = _connectedClients.Values
+                .Where(c => c.UserId == call.CalleeId)
+                .Select(c => c.ConnectionId)
+                .ToList();
+
+            if (calleeConnections.Any())
+            {
+                await _hubContext.Clients.Clients(calleeConnections)
+                    .SendAsync("VideoCallEnded", payload);
+            }
+
+            await _hubContext.Clients.Client(callerConnectionId)
+                .SendAsync("VideoCallEnded", payload);
+            return true;
+        }
+
+        public async Task<bool> EndVideoCallAsync(string connectionId, string callId, string reason = "hangup")
+        {
+            if (!_connectedClients.TryGetValue(connectionId, out var sender))
+            {
+                return false;
+            }
+
+            if (!_activeCalls.TryGetValue(callId, out var call) || call.Kind != CallKind.Video)
+            {
+                return false;
+            }
+
+            if (call.Status == CallState.Ended)
+            {
+                return false;
+            }
+
+            call.EndedAt = DateTime.UtcNow;
+            call.EndReason = reason;
+            call.Status = CallState.Ended;
+            _activeCalls.TryRemove(callId, out _);
+
+            var otherUserId = sender.UserId == call.CallerId ? call.CalleeId : call.CallerId;
+            var payload = new CallEndDto
+            {
+                CallId = callId,
+                FromUserId = sender.UserId,
+                ToUserId = otherUserId,
+                Reason = reason,
+                EndedAt = call.EndedAt.Value
+            };
+
+            var otherConnections = _connectedClients.Values
+                .Where(c => c.UserId == otherUserId)
+                .Select(c => c.ConnectionId)
+                .ToList();
+
+            if (otherConnections.Any())
+            {
+                await _hubContext.Clients.Clients(otherConnections)
+                    .SendAsync("VideoCallEnded", payload);
+            }
+
+            await _hubContext.Clients.Client(connectionId)
+                .SendAsync("VideoCallEnded", payload);
+            return true;
+        }
+
+        public async Task<bool> SendVideoRtcSignalAsync(string senderConnectionId, string callId, string signalType, string payload)
+        {
+            if (string.IsNullOrWhiteSpace(callId) || string.IsNullOrWhiteSpace(signalType))
+            {
+                return false;
+            }
+
+            if (!_connectedClients.TryGetValue(senderConnectionId, out var sender))
+            {
+                return false;
+            }
+
+            if (!_activeCalls.TryGetValue(callId, out var call) || call.Kind != CallKind.Video || call.Status == CallState.Ended)
+            {
+                return false;
+            }
+
+            // Sender must be part of the call
+            if (sender.UserId != call.CallerId && sender.UserId != call.CalleeId)
+            {
+                return false;
+            }
+
+            var otherUserId = sender.UserId == call.CallerId ? call.CalleeId : call.CallerId;
+            var otherConnections = _connectedClients.Values
+                .Where(c => c.UserId == otherUserId)
+                .Select(c => c.ConnectionId)
+                .ToList();
+
+            if (!otherConnections.Any())
+            {
+                return false;
+            }
+
+            var dto = new VideoRtcSignalDto
+            {
+                CallId = callId,
+                FromUserId = sender.UserId,
+                SignalType = signalType,
+                Payload = payload ?? string.Empty,
+                SentAt = DateTime.UtcNow
+            };
+
+            await _hubContext.Clients.Clients(otherConnections)
+                .SendAsync("VideoRtcSignal", dto);
+
+            return true;
+        }
+
+        public async Task<bool> SendVideoAudioFrameAsync(string senderConnectionId, string callId, byte[] pcmData)
+        {
+            if (pcmData == null || pcmData.Length == 0 || pcmData.Length > 65536)
+            {
+                return false;
+            }
+
+            if (!_connectedClients.TryGetValue(senderConnectionId, out var sender))
+            {
+                return false;
+            }
+
+            if (!_activeCalls.TryGetValue(callId, out var call) || call.Status != CallState.InProgress || call.Kind != CallKind.Video)
+            {
+                return false;
+            }
+
+            var targetUserId = sender.UserId == call.CallerId ? call.CalleeId : call.CallerId;
+            var targetConnections = _connectedClients.Values
+                .Where(c => c.UserId == targetUserId)
+                .Select(c => c.ConnectionId)
+                .ToList();
+
+            if (!targetConnections.Any())
+            {
+                return false;
+            }
+
+            await _hubContext.Clients.Clients(targetConnections)
+                .SendAsync("ReceiveVideoAudioFrame", callId, pcmData);
+
+            return true;
+        }
+
+        public async Task<bool> SendVideoFrameAsync(string senderConnectionId, string callId, byte[] frameBytes)
+        {
+            if (frameBytes == null || frameBytes.Length == 0 || frameBytes.Length > 400_000)
+            {
+                return false;
+            }
+
+            if (!_connectedClients.TryGetValue(senderConnectionId, out var sender))
+            {
+                return false;
+            }
+
+            if (!_activeCalls.TryGetValue(callId, out var call) || call.Status != CallState.InProgress || call.Kind != CallKind.Video)
+            {
+                return false;
+            }
+
+            var targetUserId = sender.UserId == call.CallerId ? call.CalleeId : call.CallerId;
+            var targetConnections = _connectedClients.Values
+                .Where(c => c.UserId == targetUserId)
+                .Select(c => c.ConnectionId)
+                .ToList();
+
+            if (!targetConnections.Any())
+            {
+                return false;
+            }
+
+            await _hubContext.Clients.Clients(targetConnections)
+                .SendAsync("ReceiveVideoFrame", callId, frameBytes);
 
             return true;
         }
@@ -1336,6 +1780,7 @@ namespace PaL.X.Api.Services
             public int CallerId { get; set; }
             public int CalleeId { get; set; }
             public CallState Status { get; set; }
+            public CallKind Kind { get; set; }
             public DateTime StartedAt { get; set; }
             public DateTime? AcceptedAt { get; set; }
             public DateTime? EndedAt { get; set; }

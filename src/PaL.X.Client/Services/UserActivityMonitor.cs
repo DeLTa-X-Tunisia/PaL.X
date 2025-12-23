@@ -102,7 +102,7 @@ namespace PaL.X.Client.Services
             try
             {
                 var request = new UpdateStatusRequest { NewStatus = newStatus };
-                var response = await _httpClient.PutAsJsonAsync("http://localhost:5024/api/session/status", request);
+                var response = await _httpClient.PutAsJsonAsync("https://localhost:5001/api/session/status", request);
                 
                 if (response.IsSuccessStatusCode)
                 {
@@ -121,7 +121,7 @@ namespace PaL.X.Client.Services
         {
             try
             {
-                await _httpClient.PostAsync("http://localhost:5024/api/session/heartbeat", null);
+                await _httpClient.PostAsync("https://localhost:5001/api/session/heartbeat", null);
             }
             catch (Exception ex)
             {

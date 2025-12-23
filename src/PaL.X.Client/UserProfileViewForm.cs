@@ -166,7 +166,7 @@ namespace PaL.X.Client
 
             try
             {
-                var response = await _httpClient.GetAsync($"http://localhost:5024/api/profile/{_targetUserId}");
+                var response = await _httpClient.GetAsync($"https://localhost:5001/api/profile/{_targetUserId}");
                 if (!response.IsSuccessStatusCode)
                 {
                     PalMessageBox.Show("Impossible de charger le profil.");

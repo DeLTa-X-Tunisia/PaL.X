@@ -17,7 +17,7 @@ namespace PaL.X.Admin
         private readonly string _authToken;
         private readonly UserData _currentUser;
         private readonly HttpClient _httpClient;
-        private const string ApiBaseUrl = "http://localhost:5024/api";
+        private const string ApiBaseUrl = "https://localhost:5001/api";
         
         private System.Windows.Forms.Timer _refreshTimer;
         
@@ -462,12 +462,6 @@ namespace PaL.X.Admin
                             await Task.Delay(100);
                             MessageBox.Show("Service arrêté. Tous les clients ont été déconnectés.",
                                 "Service arrêté", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        }
-                        else
-                        {
-                            await Task.Delay(100);
-                            MessageBox.Show("Arrêt du service confirmé, mais la réponse n'a pas indiqué de succès.",
-                                "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         }
                     }
                     else

@@ -13,7 +13,7 @@ namespace PaL.X.Client
     public partial class FormLogin : Form
     {
         private readonly HttpClient _httpClient;
-        private const string ApiBaseUrl = "http://localhost:5024/api";
+        private const string ApiBaseUrl = "https://localhost:5001/api";
         private CheckBox chkInvisibleLogin = null!;
 
         public string AuthToken { get; private set; } = string.Empty;

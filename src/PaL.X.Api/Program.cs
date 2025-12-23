@@ -4,20 +4,45 @@ using Microsoft.IdentityModel.Tokens;
 using PaL.X.Api.Services;
 using PaL.X.API.Services;
 using PaL.X.Data;
+using Npgsql;
 using System.Text;
 using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
+var defaultConnection = builder.Configuration.GetConnectionString("DefaultConnection");
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(defaultConnection));
 
 // Ajouter le ServiceManager comme singleton
 builder.Services.AddSingleton<ServiceManager>();
 
 // Ajouter le service de nettoyage des messages
-builder.Services.AddHostedService<MessageCleanupService>();
+// En Development, si la DB n'est pas configurée (ex: pas de mot de passe), éviter de spammer des erreurs.
+var hasDbPassword = false;
+try
+{
+    if (!string.IsNullOrWhiteSpace(defaultConnection))
+    {
+        var csb = new NpgsqlConnectionStringBuilder(defaultConnection);
+        hasDbPassword = !string.IsNullOrWhiteSpace(csb.Password);
+    }
+}
+catch
+{
+    hasDbPassword = false;
+}
+
+if (!builder.Environment.IsDevelopment() || hasDbPassword)
+{
+    builder.Services.AddHostedService<MessageCleanupService>();
+}
+else
+{
+    Console.WriteLine("[WARN] ConnectionStrings:DefaultConnection seems incomplete (no Password/Pwd). MessageCleanupService is disabled in Development.");
+}
 
 // Ajouter le service de géolocalisation
 builder.Services.AddHttpClient<IGeoLocationService, GeoLocationService>();
@@ -29,7 +54,17 @@ builder.Services.AddSignalR();
 var jwtKey = builder.Configuration["Jwt:Key"];
 if (string.IsNullOrEmpty(jwtKey))
 {
-    throw new InvalidOperationException("JWT Key is not configured");
+    if (builder.Environment.IsDevelopment())
+    {
+        // Dev fallback to avoid hard-stop when appsettings are incomplete.
+        // For real deployments, configure Jwt:Key (or env var JWT__KEY).
+        jwtKey = "DEV_ONLY__CHANGE_ME__PaL.X__JwtKey__32+chars_minimum";
+        Console.WriteLine("[WARN] Jwt:Key is missing. Using a DEVELOPMENT fallback key. Configure Jwt:Key or env var JWT__KEY.");
+    }
+    else
+    {
+        throw new InvalidOperationException("JWT Key is not configured");
+    }
 }
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -63,9 +98,21 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// Ensure HTTPS redirection knows the HTTPS port (avoids: "Failed to determine the https port for redirect")
+var httpsPortValue = builder.Configuration["ASPNETCORE_HTTPS_PORT"];
+if (!int.TryParse(httpsPortValue, out var httpsPort))
+{
+    httpsPort = builder.Environment.IsDevelopment() ? 5001 : 443;
+}
+
+builder.Services.AddHttpsRedirection(options =>
+{
+    options.HttpsPort = httpsPort;
+});
+
 // Add CORS
 var allowedOrigins = builder.Environment.IsDevelopment() 
-    ? new[] { "http://localhost:5000", "https://localhost:7109" }
+    ? new[] { "http://localhost:5000", "https://localhost:5001" }
     : new[] { "https://votre-domaine.com" };
 
 builder.Services.AddCors(options =>
@@ -100,31 +147,44 @@ app.MapHub<PaL.X.Api.Hubs.PaLHub>("/hubs/pal");
 // Ensure database is created and migrated
 using (var scope = app.Services.CreateScope())
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    
-    // Appliquer les migrations automatiquement
-    dbContext.Database.Migrate();
-    
-    // Nettoyer les sessions fantômes (sessions actives des exécutions précédentes)
-    var orphanedSessions = await dbContext.Sessions
-        .Where(s => s.IsActive)
-        .ToListAsync();
-    
-    if (orphanedSessions.Any())
+    try
     {
-        foreach (var session in orphanedSessions)
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // Appliquer les migrations automatiquement
+        dbContext.Database.Migrate();
+
+        // Nettoyer les sessions fantômes (sessions actives des exécutions précédentes)
+        var orphanedSessions = await dbContext.Sessions
+            .Where(s => s.IsActive)
+            .ToListAsync();
+
+        if (orphanedSessions.Any())
         {
-            session.IsActive = false;
-            session.DisconnectedAt = DateTime.UtcNow;
-            session.DisplayedStatus = PaL.X.Shared.Enums.UserStatus.Offline;
-            session.RealStatus = PaL.X.Shared.Enums.UserStatus.Offline;
+            foreach (var session in orphanedSessions)
+            {
+                session.IsActive = false;
+                session.DisconnectedAt = DateTime.UtcNow;
+                session.DisplayedStatus = PaL.X.Shared.Enums.UserStatus.Offline;
+                session.RealStatus = PaL.X.Shared.Enums.UserStatus.Offline;
+            }
+            await dbContext.SaveChangesAsync();
+            Console.WriteLine($"Nettoyage: {orphanedSessions.Count} sessions fantômes désactivées.");
         }
-        await dbContext.SaveChangesAsync();
-        Console.WriteLine($"Nettoyage: {orphanedSessions.Count} sessions fantômes désactivées.");
+
+        // Initialiser les données de test (Admin et User)
+        // await SeedData.Initialize(dbContext);
     }
-    
-    // Initialiser les données de test (Admin et User)
-    // await SeedData.Initialize(dbContext);
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[ERROR] Database initialization failed: {ex.GetType().Name}: {ex.Message}");
+        if (!app.Environment.IsDevelopment())
+        {
+            throw;
+        }
+
+        Console.WriteLine("[WARN] Continuing startup because environment is Development. Configure ConnectionStrings:DefaultConnection to enable DB features.");
+    }
 }
 
 app.Run();

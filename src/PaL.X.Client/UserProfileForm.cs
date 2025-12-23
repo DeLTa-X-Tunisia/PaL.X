@@ -506,7 +506,7 @@ namespace PaL.X.Client
         {
             try
             {
-                const string url = "http://localhost:5024/api/profile";
+                const string url = "https://localhost:5001/api/profile";
                 var response = await _httpClient.GetAsync(url);
                 
                 if (response.IsSuccessStatusCode)
@@ -741,7 +741,7 @@ namespace PaL.X.Client
 
             try
             {
-                var response = await _httpClient.PostAsJsonAsync("http://localhost:5024/api/profile", updateDto);
+                var response = await _httpClient.PostAsJsonAsync("https://localhost:5001/api/profile", updateDto);
                 if (response.IsSuccessStatusCode)
                 {
                     PalMessageBox.Show("Profil mis à jour !");

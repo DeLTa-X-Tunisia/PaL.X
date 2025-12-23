@@ -205,5 +205,46 @@ namespace PaL.X.Api.Hubs
         {
             await _serviceManager.SendAudioFrameAsync(Context.ConnectionId, callId, pcmData);
         }
+
+        // ---- Video calls ----
+        public async Task VideoCallInvite(int targetUserId)
+        {
+            await _serviceManager.StartVideoCallAsync(Context.ConnectionId, targetUserId);
+        }
+
+        public async Task VideoCallAccept(string callId)
+        {
+            await _serviceManager.AcceptVideoCallAsync(Context.ConnectionId, callId);
+        }
+
+        public async Task VideoCallReject(string callId, string reason)
+        {
+            await _serviceManager.RejectVideoCallAsync(Context.ConnectionId, callId, reason);
+        }
+
+        public async Task VideoCallCancel(string callId, string reason)
+        {
+            await _serviceManager.CancelVideoCallAsync(Context.ConnectionId, callId, reason);
+        }
+
+        public async Task VideoCallHangup(string callId, string reason)
+        {
+            await _serviceManager.EndVideoCallAsync(Context.ConnectionId, callId, reason);
+        }
+
+        public async Task SendVideoAudioFrame(string callId, byte[] pcmData)
+        {
+            await _serviceManager.SendVideoAudioFrameAsync(Context.ConnectionId, callId, pcmData);
+        }
+
+        public async Task SendVideoFrame(string callId, byte[] frameBytes)
+        {
+            await _serviceManager.SendVideoFrameAsync(Context.ConnectionId, callId, frameBytes);
+        }
+
+        public async Task VideoRtcSendSignal(string callId, string signalType, string payload)
+        {
+            await _serviceManager.SendVideoRtcSignalAsync(Context.ConnectionId, callId, signalType, payload);
+        }
     }
 }

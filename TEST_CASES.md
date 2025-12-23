@@ -7,8 +7,8 @@
 - [ ] L'utilisateur admin par défaut est créé
 
 ## Test 2: API Backend
-- [ ] L'API démarre sans erreur (https://localhost:7109)
-- [ ] Swagger est accessible (https://localhost:7109/swagger)
+- [ ] L'API démarre sans erreur (https://localhost:5001)
+- [ ] Swagger est accessible (https://localhost:5001/swagger)
 - [ ] Endpoint /api/service/check répond
 - [ ] Endpoint /api/auth/register fonctionne
 - [ ] Endpoint /api/auth/login fonctionne

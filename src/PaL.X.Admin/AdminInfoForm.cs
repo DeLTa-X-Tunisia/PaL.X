@@ -16,7 +16,7 @@ namespace PaL.X.Admin
         private readonly string _authToken;
         private readonly UserData _currentUser;
         private readonly HttpClient _httpClient;
-        private const string ApiBaseUrl = "http://localhost:5024/api";
+        private const string ApiBaseUrl = "https://localhost:5001/api";
         private byte[]? _profilePictureBytes;
 
         public AdminInfoForm(string authToken, UserData currentUser)

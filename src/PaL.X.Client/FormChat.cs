@@ -11,6 +11,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
+using System.IO.Compression;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Net.Http.Headers;
@@ -122,6 +123,9 @@ namespace PaL.X.Client
     // Voice call button (header)
     private PictureBox? _btnVoiceCall;
     private ToolTip? _ttVoiceCall;
+    private PictureBox? _btnDeleteHistory;
+    private Image? _deleteHistoryEmptyIcon;
+    private Image? _deleteHistoryFilledIcon;
     private VoiceCallUiState _voiceCallUiState = VoiceCallUiState.Idle;
     private VoiceCallDockControl? _callDockControl;
     private DockPosition _callDockPosition = DockPosition.Top;
@@ -243,13 +247,18 @@ namespace PaL.X.Client
             _voiceCallUiState = state;
             if (_btnVoiceCall == null) return;
 
+            var offPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Chat_Form", "Appel_Vocal.png");
+            var onPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Chat_Form", "Mic_ON.png");
+
             Image? icon = state switch
             {
-                VoiceCallUiState.InCall => LoadAbsoluteImage(@"C:\Users\azizi\OneDrive\Desktop\PaL.X\Voice\mic_on.png", new Size(_btnVoiceCall.Width, _btnVoiceCall.Height))
+                VoiceCallUiState.InCall => LoadAbsoluteImage(onPath, new Size(_btnVoiceCall.Width, _btnVoiceCall.Height))
                                             ?? ResourceImageStore.LoadImage("Voice/mic_on1.png", new Size(_btnVoiceCall.Width, _btnVoiceCall.Height)),
-                VoiceCallUiState.Muted => LoadAbsoluteImage(@"C:\Users\azizi\OneDrive\Desktop\PaL.X\Voice\mic_mute.png", new Size(_btnVoiceCall.Width, _btnVoiceCall.Height))
+
+                VoiceCallUiState.Muted => LoadAbsoluteImage(offPath, new Size(_btnVoiceCall.Width, _btnVoiceCall.Height))
                                              ?? ResourceImageStore.LoadImage("Voice/mic_off1.png", new Size(_btnVoiceCall.Width, _btnVoiceCall.Height)),
-                _ => LoadAbsoluteImage(@"C:\Users\azizi\OneDrive\Desktop\PaL.X\Voice\mic_off.png", new Size(_btnVoiceCall.Width, _btnVoiceCall.Height))
+
+                _ => LoadAbsoluteImage(offPath, new Size(_btnVoiceCall.Width, _btnVoiceCall.Height))
                      ?? ResourceImageStore.LoadImage("Voice/mic_off1.png", new Size(_btnVoiceCall.Width, _btnVoiceCall.Height)),
             };
 
@@ -784,20 +793,20 @@ namespace PaL.X.Client
             int startX = this.ClientSize.Width - (iconSize + 10); // 10px margin from right
 
             // Delete Chat Icon (Active)
-            var btnDeleteChat = new PictureBox();
-            btnDeleteChat.Size = new Size(iconSize, iconSize);
-            btnDeleteChat.Location = new Point(startX - (iconSpacing * 0), 24);
-            btnDeleteChat.SizeMode = PictureBoxSizeMode.Zoom;
-            btnDeleteChat.Cursor = Cursors.Hand;
+            _btnDeleteHistory = new PictureBox();
+            _btnDeleteHistory.Size = new Size(iconSize, iconSize);
+            _btnDeleteHistory.Location = new Point(startX - (iconSpacing * 0), 24);
+            _btnDeleteHistory.SizeMode = PictureBoxSizeMode.Zoom;
+            _btnDeleteHistory.Cursor = Cursors.Hand;
             var deleteIcon = ResourceImageStore.LoadImage("various/deletechat.png");
             if (deleteIcon != null)
             {
-                btnDeleteChat.Image = deleteIcon;
+                _btnDeleteHistory.Image = deleteIcon;
             }
-            btnDeleteChat.Click += BtnDeleteChat_Click;
+            _btnDeleteHistory.Click += BtnDeleteChat_Click;
             var ttDelete = new ToolTip();
-            ttDelete.SetToolTip(btnDeleteChat, "Effacer le chat");
-            pnlHeader.Controls.Add(btnDeleteChat);
+            ttDelete.SetToolTip(_btnDeleteHistory, "Effacer le chat");
+            pnlHeader.Controls.Add(_btnDeleteHistory);
 
             // Save Chat to PDF Icon (Active)
             var btnSaveChatPdf = new PictureBox();
@@ -805,30 +814,31 @@ namespace PaL.X.Client
             btnSaveChatPdf.Location = new Point(startX - (iconSpacing * 1), 24);
             btnSaveChatPdf.SizeMode = PictureBoxSizeMode.Zoom;
             btnSaveChatPdf.Cursor = Cursors.Hand;
-            var pdfIcon = ResourceImageStore.LoadImage("various/savepdf.png");
-            if (pdfIcon != null)
-            {
-                btnSaveChatPdf.Image = pdfIcon;
-            }
+            var saveHistoryPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Chat_Form", "Save_History.png");
+            btnSaveChatPdf.Image =
+                LoadAbsoluteImage(saveHistoryPath, new Size(btnSaveChatPdf.Width, btnSaveChatPdf.Height))
+                ?? ResourceImageStore.LoadImage("various/savepdf.png");
             btnSaveChatPdf.Click += BtnSaveChatPdf_Click;
             var ttPdf = new ToolTip();
-            ttPdf.SetToolTip(btnSaveChatPdf, "Enregistrer le chat en PDF");
+            ttPdf.SetToolTip(btnSaveChatPdf, "Enregistrer le chat");
             pnlHeader.Controls.Add(btnSaveChatPdf);
 
-            // Video Chat Icon (Future - Disabled)
+            // Video Chat Icon (Active)
             var btnVideoChat = new PictureBox();
             btnVideoChat.Size = new Size(iconSize, iconSize);
             btnVideoChat.Location = new Point(startX - (iconSpacing * 2), 24);
             btnVideoChat.SizeMode = PictureBoxSizeMode.Zoom;
-            btnVideoChat.Cursor = Cursors.No;
-            var videoIcon = ResourceImageStore.LoadImage("various/videochat.png");
-            if (videoIcon != null)
-            {
-                using var bitmap = new Bitmap(videoIcon);
-                btnVideoChat.Image = MakeGrayscale(bitmap);
-            }
+            btnVideoChat.Cursor = Cursors.Hand;
+
+            var videoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Chat_Form", "Video_Call.png");
+            btnVideoChat.Image =
+                LoadAbsoluteImage(videoPath, new Size(btnVideoChat.Width, btnVideoChat.Height))
+                ?? ResourceImageStore.LoadImage("various/videochat.png");
+
+            btnVideoChat.Click += async (_, __) => await (_mainForm?.StartVideoCall(_recipient.Id) ?? Task.CompletedTask);
+
             var ttVideo = new ToolTip();
-            ttVideo.SetToolTip(btnVideoChat, "Chat vidéo (bientôt disponible)");
+            ttVideo.SetToolTip(btnVideoChat, "Chat vidéo");
             pnlHeader.Controls.Add(btnVideoChat);
 
             // Voice Call Icon (active)
@@ -1072,6 +1082,9 @@ namespace PaL.X.Client
             _lnkLoadOlder.Click += async (s, e) => await LoadOlderMessagesAsync();
             flpHistory.Controls.Add(_lnkLoadOlder);
 
+            // Initial state: chat is empty until history loads
+            UpdateDeleteHistoryButtonIcon();
+
             flpHistory.ResumeLayout(false);
             this.Controls.Add(flpHistory);
             
@@ -1302,6 +1315,7 @@ namespace PaL.X.Client
             {
                 _hasMoreHistory = false;
                 UpdateLoadOlderVisibility();
+                UpdateDeleteHistoryButtonIcon();
                 return;
             }
 
@@ -1342,6 +1356,7 @@ namespace PaL.X.Client
 
             ScrollHistoryToBottom();
             UpdateLoadOlderVisibility();
+            UpdateDeleteHistoryButtonIcon();
         }
 
         public void UpdateProfile(UserProfileDto updatedProfile)
@@ -3230,6 +3245,7 @@ namespace PaL.X.Client
 
             var msgControl = CreateMessageControl(msg, isMe);
             flpHistory.Controls.Add(msgControl);
+            UpdateDeleteHistoryButtonIcon();
             if (autoScroll)
             {
                 flpHistory.ScrollControlIntoView(msgControl);
@@ -3506,6 +3522,65 @@ namespace PaL.X.Client
             _oldestLoadedTimestamp = null;
             _hasMoreHistory = false;
             UpdateLoadOlderVisibility();
+            UpdateDeleteHistoryButtonIcon();
+        }
+
+        private bool HasConversationContent()
+        {
+            if (flpHistory == null)
+            {
+                return false;
+            }
+
+            foreach (Control c in flpHistory.Controls)
+            {
+                if (_lnkLoadOlder != null && ReferenceEquals(c, _lnkLoadOlder))
+                {
+                    continue;
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+        private void EnsureDeleteHistoryIconsLoaded()
+        {
+            if (_btnDeleteHistory == null)
+            {
+                return;
+            }
+
+            if (_deleteHistoryEmptyIcon != null && _deleteHistoryFilledIcon != null)
+            {
+                return;
+            }
+
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var emptyPath = Path.Combine(baseDir, "Assets", "Chat_Form", "Eistory_E.png");
+            var filledPath = Path.Combine(baseDir, "Assets", "Chat_Form", "History_F.png");
+            var size = new Size(_btnDeleteHistory.Width, _btnDeleteHistory.Height);
+
+            _deleteHistoryEmptyIcon ??= LoadAbsoluteImage(emptyPath, size);
+            _deleteHistoryFilledIcon ??= LoadAbsoluteImage(filledPath, size);
+        }
+
+        private void UpdateDeleteHistoryButtonIcon()
+        {
+            if (_btnDeleteHistory == null)
+            {
+                return;
+            }
+
+            EnsureDeleteHistoryIconsLoaded();
+
+            bool hasContent = HasConversationContent();
+            var target = hasContent ? _deleteHistoryFilledIcon : _deleteHistoryEmptyIcon;
+            if (target != null)
+            {
+                _btnDeleteHistory.Image = target;
+            }
         }
 
         public void UpdateMessageId(ChatMessageDto msg)
@@ -3746,7 +3821,7 @@ namespace PaL.X.Client
                 try
                 {
                     // Clear UI locally
-                    flpHistory.Controls.Clear();
+                    ClearConversation();
                     
                     // Delete messages locally in database
                     var response = await _mainForm.GetHttpClient().DeleteAsync(
@@ -4136,192 +4211,621 @@ namespace PaL.X.Client
         {
             try
             {
-                EnsurePdfLicense();
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var docsPath = Path.Combine(baseDir, "Assets", "Chat_Form", "Save_His", "save_docs.png");
+                var pdfPath = Path.Combine(baseDir, "Assets", "Chat_Form", "Save_His", "save_pdf.png");
+                var txtPath = Path.Combine(baseDir, "Assets", "Chat_Form", "Save_His", "save_txt.png");
 
-                var saveDialog = new SaveFileDialog();
-                saveDialog.Filter = "PDF Files (*.pdf)|*.pdf";
-                saveDialog.FileName = $"Chat_{_recipient.FirstName}_{_recipient.LastName}_{DateTime.Now:yyyyMMdd}.pdf";
-                
-                if (saveDialog.ShowDialog() == DialogResult.OK)
+                using var dlg = new SaveChatOptionsDialog(
+                    LoadAbsoluteImage(docsPath, new Size(42, 42)),
+                    LoadAbsoluteImage(pdfPath, new Size(42, 42)),
+                    LoadAbsoluteImage(txtPath, new Size(42, 42)));
+
+                if (sender is Control anchor)
                 {
-                    // Get chat history
-                    var messages = await _mainForm.GetChatHistory(_recipient.Id);
-                    var exportTimestamp = DateTime.Now;
+                    var screen = anchor.PointToScreen(Point.Empty);
+                    dlg.Location = new Point(Math.Max(0, screen.X - 140), Math.Max(0, screen.Y + anchor.Height + 6));
+                }
+                else
+                {
+                    dlg.StartPosition = FormStartPosition.CenterParent;
+                }
 
-                    if (messages == null || messages.Count == 0)
-                    {
-                        PalMessageBox.Show("Aucun message à exporter pour cette conversation.");
-                        return;
-                    }
+                if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SelectedFormat == null)
+                {
+                    return;
+                }
 
-                    var document = Document.Create(container =>
-                    {
-                        container.Page(page =>
-                        {
-                            page.Size(PageSizes.A4);
-                            page.Margin(30);
-                            page.DefaultTextStyle(x => x.FontSize(11).FontFamily("Segoe UI"));
-
-                            page.Header().Column(column =>
-                            {
-                                column.Spacing(6);
-                                column.Item().Text("Historique de conversation").FontSize(18).SemiBold();
-                                column.Item().Text($"Entre {_currentUser.FirstName} {_currentUser.LastName} et {_recipient.FirstName} {_recipient.LastName}");
-                                column.Item().Text($"Exporté le {exportTimestamp:dd/MM/yyyy HH:mm}").FontColor(Colors.Grey.Medium);
-                            });
-
-                            page.Content().PaddingVertical(10).Column(column =>
-                            {
-                                column.Spacing(12);
-
-                                foreach (var msg in messages)
-                                {
-                                    var senderName = msg.SenderId == _currentUser.Id
-                                        ? $"{_currentUser.FirstName} {_currentUser.LastName}"
-                                        : $"{_recipient.FirstName} {_recipient.LastName}";
-
-                                    var messageContent = BuildMessageExportContent(msg);
-
-                                    column.Item().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).PaddingBottom(6).Column(block =>
-                                    {
-                                        block.Spacing(6);
-                                        block.Item().Text($"[{msg.Timestamp:dd/MM/yyyy HH:mm}] {senderName}").SemiBold();
-
-                                        if (messageContent.Lines.Count > 0)
-                                        {
-                                            block.Item().Text(text =>
-                                            {
-                                                foreach (var line in messageContent.Lines)
-                                                {
-                                                    text.Line(line);
-                                                }
-                                            });
-                                        }
-
-                                        if (messageContent.Images.Count > 0)
-                                        {
-                                            foreach (var image in messageContent.Images)
-                                            {
-                                                block.Item().PaddingTop(4).Element(img =>
-                                                {
-                                                    img.Width(PdfSmileySizePixels)
-                                                       .Height(PdfSmileySizePixels)
-                                                       .Image(image.Data);
-                                                });
-                                            }
-                                        }
-                                    });
-                                }
-                            });
-
-                            page.Footer().AlignLeft().Text(x =>
-                            {
-                                x.Span("© PaL.X").FontSize(9).FontColor(Colors.Grey.Medium);
-                                x.Span("  |  ");
-                                x.CurrentPageNumber().FontSize(9).FontColor(Colors.Grey.Medium);
-                                x.Span(" / ");
-                                x.TotalPages().FontSize(9).FontColor(Colors.Grey.Medium);
-                            });
-                        });
-                    });
-
-                    byte[] pdfBytes;
-                    try
-                    {
-                        pdfBytes = await Task.Run(() => document.GeneratePdf());
-                    }
-                    catch (Exception pdfEx)
-                    {
-                        PalMessageBox.Show($"Erreur lors de la génération du PDF : {pdfEx.Message}");
-                        return;
-                    }
-
-                    try
-                    {
-                        await File.WriteAllBytesAsync(saveDialog.FileName, pdfBytes);
-                    }
-                    catch (Exception ioEx)
-                    {
-                        PalMessageBox.Show($"Erreur lors de l'écriture du fichier PDF : {ioEx.Message}");
-                        return;
-                    }
-
-                    var exportedFile = new FileInfo(saveDialog.FileName);
-                    if (!exportedFile.Exists || exportedFile.Length < 128)
-                    {
-                        PalMessageBox.Show("Le fichier exporté semble vide ou corrompu. Merci de réessayer.");
-                        return;
-                    }
-                    
-                    // Show success dialog with options
-                    var result = MessageBox.Show(
-                        "Chat exporté avec succès !\n\nVoulez-vous ouvrir le fichier exporté ?",
-                        "Export réussi",
-                        MessageBoxButtons.YesNo,
-                        MessageBoxIcon.Information);
-
-                    if (result == DialogResult.Yes)
-                    {
-                        // Open the file
-                        try
-                        {
-                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                            {
-                                FileName = saveDialog.FileName,
-                                UseShellExecute = true
-                            });
-                        }
-                        catch
-                        {
-                            // If file can't be opened, ask to open folder
-                            var folderResult = MessageBox.Show(
-                                "Impossible d'ouvrir le fichier.\n\nVoulez-vous ouvrir le dossier contenant le fichier ?",
-                                "Erreur",
-                                MessageBoxButtons.YesNo,
-                                MessageBoxIcon.Warning);
-
-                            if (folderResult == DialogResult.Yes)
-                            {
-                                string folderPath = System.IO.Path.GetDirectoryName(saveDialog.FileName) ?? "";
-                                if (!string.IsNullOrEmpty(folderPath))
-                                {
-                                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                                    {
-                                        FileName = folderPath,
-                                        UseShellExecute = true
-                                    });
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // Ask if they want to open the folder instead
-                        var folderResult = MessageBox.Show(
-                            "Voulez-vous ouvrir le dossier contenant le fichier ?",
-                            "Export réussi",
-                            MessageBoxButtons.YesNo,
-                            MessageBoxIcon.Question);
-
-                        if (folderResult == DialogResult.Yes)
-                        {
-                            string folderPath = System.IO.Path.GetDirectoryName(saveDialog.FileName) ?? "";
-                            if (!string.IsNullOrEmpty(folderPath))
-                            {
-                                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                                {
-                                    FileName = folderPath,
-                                    UseShellExecute = true
-                                });
-                            }
-                        }
-                    }
+                switch (dlg.SelectedFormat.Value)
+                {
+                    case ChatSaveFormat.Pdf:
+                        await ExportChatPdfAsync();
+                        break;
+                    case ChatSaveFormat.Txt:
+                        await ExportChatTxtAsync();
+                        break;
+                    case ChatSaveFormat.Docs:
+                        await ExportChatDocsAsync();
+                        break;
                 }
             }
             catch (Exception ex)
             {
                 PalMessageBox.Show($"Erreur lors de l'export : {ex.Message}");
             }
+        }
+
+        private async Task ExportChatPdfAsync()
+        {
+            EnsurePdfLicense();
+
+            var saveDialog = new SaveFileDialog();
+            saveDialog.Filter = "PDF Files (*.pdf)|*.pdf";
+            saveDialog.FileName = $"Chat_{_recipient.FirstName}_{_recipient.LastName}_{DateTime.Now:yyyyMMdd}.pdf";
+
+            if (saveDialog.ShowDialog() != DialogResult.OK)
+            {
+                return;
+            }
+
+            var messages = await _mainForm.GetChatHistory(_recipient.Id);
+            var exportTimestamp = DateTime.Now;
+
+            if (messages == null || messages.Count == 0)
+            {
+                PalMessageBox.Show("Aucun message à exporter pour cette conversation.");
+                return;
+            }
+
+            var document = Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(30);
+                    page.DefaultTextStyle(x => x.FontSize(11).FontFamily("Segoe UI"));
+
+                    page.Header().Column(column =>
+                    {
+                        column.Spacing(6);
+                        column.Item().Text("Historique de conversation").FontSize(18).SemiBold();
+                        column.Item().Text($"Entre {_currentUser.FirstName} {_currentUser.LastName} et {_recipient.FirstName} {_recipient.LastName}");
+                        column.Item().Text($"Exporté le {exportTimestamp:dd/MM/yyyy HH:mm}").FontColor(Colors.Grey.Medium);
+                    });
+
+                    page.Content().PaddingVertical(10).Column(column =>
+                    {
+                        column.Spacing(12);
+
+                        foreach (var msg in messages)
+                        {
+                            var senderName = msg.SenderId == _currentUser.Id
+                                ? $"{_currentUser.FirstName} {_currentUser.LastName}"
+                                : $"{_recipient.FirstName} {_recipient.LastName}";
+
+                            var messageContent = BuildMessageExportContent(msg);
+
+                            column.Item().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).PaddingBottom(6).Column(block =>
+                            {
+                                block.Spacing(6);
+                                block.Item().Text($"[{msg.Timestamp:dd/MM/yyyy HH:mm}] {senderName}").SemiBold();
+
+                                if (messageContent.Lines.Count > 0)
+                                {
+                                    block.Item().Text(text =>
+                                    {
+                                        foreach (var line in messageContent.Lines)
+                                        {
+                                            text.Line(line);
+                                        }
+                                    });
+                                }
+
+                                if (messageContent.Images.Count > 0)
+                                {
+                                    foreach (var image in messageContent.Images)
+                                    {
+                                        block.Item().PaddingTop(4).Element(img =>
+                                        {
+                                            img.Width(PdfSmileySizePixels)
+                                               .Height(PdfSmileySizePixels)
+                                               .Image(image.Data);
+                                        });
+                                    }
+                                }
+                            });
+                        }
+                    });
+
+                    page.Footer().AlignLeft().Text(x =>
+                    {
+                        x.Span("© PaL.X").FontSize(9).FontColor(Colors.Grey.Medium);
+                        x.Span("  |  ");
+                        x.CurrentPageNumber().FontSize(9).FontColor(Colors.Grey.Medium);
+                        x.Span(" / ");
+                        x.TotalPages().FontSize(9).FontColor(Colors.Grey.Medium);
+                    });
+                });
+            });
+
+            byte[] pdfBytes;
+            try
+            {
+                pdfBytes = await Task.Run(() => document.GeneratePdf());
+            }
+            catch (Exception pdfEx)
+            {
+                PalMessageBox.Show($"Erreur lors de la génération du PDF : {pdfEx.Message}");
+                return;
+            }
+
+            try
+            {
+                await File.WriteAllBytesAsync(saveDialog.FileName, pdfBytes);
+            }
+            catch (Exception ioEx)
+            {
+                PalMessageBox.Show($"Erreur lors de l'écriture du fichier PDF : {ioEx.Message}");
+                return;
+            }
+
+            var exportedFile = new FileInfo(saveDialog.FileName);
+            if (!exportedFile.Exists || exportedFile.Length < 128)
+            {
+                PalMessageBox.Show("Le fichier exporté semble vide ou corrompu. Merci de réessayer.");
+                return;
+            }
+
+            var result = MessageBox.Show(
+                "Chat exporté avec succès !\n\nVoulez-vous ouvrir le fichier exporté ?",
+                "Export réussi",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Information);
+
+            if (result == DialogResult.Yes)
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = saveDialog.FileName,
+                        UseShellExecute = true
+                    });
+                }
+                catch
+                {
+                    var folderResult = MessageBox.Show(
+                        "Impossible d'ouvrir le fichier.\n\nVoulez-vous ouvrir le dossier contenant le fichier ?",
+                        "Erreur",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning);
+
+                    if (folderResult == DialogResult.Yes)
+                    {
+                        string folderPath = System.IO.Path.GetDirectoryName(saveDialog.FileName) ?? "";
+                        if (!string.IsNullOrEmpty(folderPath))
+                        {
+                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = folderPath,
+                                UseShellExecute = true
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        private async Task ExportChatTxtAsync()
+        {
+            var saveDialog = new SaveFileDialog();
+            saveDialog.Filter = "Text Files (*.txt)|*.txt";
+            saveDialog.FileName = $"Chat_{_recipient.FirstName}_{_recipient.LastName}_{DateTime.Now:yyyyMMdd}.txt";
+
+            if (saveDialog.ShowDialog() != DialogResult.OK)
+            {
+                return;
+            }
+
+            var messages = await _mainForm.GetChatHistory(_recipient.Id);
+            var exportTimestamp = DateTime.Now;
+
+            if (messages == null || messages.Count == 0)
+            {
+                PalMessageBox.Show("Aucun message à exporter pour cette conversation.");
+                return;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine("Historique de conversation");
+            sb.AppendLine($"Entre {_currentUser.FirstName} {_currentUser.LastName} et {_recipient.FirstName} {_recipient.LastName}");
+            sb.AppendLine($"Exporté le {exportTimestamp:dd/MM/yyyy HH:mm}");
+            sb.AppendLine(new string('-', 50));
+
+            foreach (var msg in messages)
+            {
+                var senderName = msg.SenderId == _currentUser.Id
+                    ? $"{_currentUser.FirstName} {_currentUser.LastName}"
+                    : $"{_recipient.FirstName} {_recipient.LastName}";
+
+                var content = BuildMessageExportContent(msg);
+                sb.AppendLine($"[{msg.Timestamp:dd/MM/yyyy HH:mm}] {senderName}");
+
+                foreach (var line in content.Lines)
+                {
+                    sb.AppendLine(line);
+                }
+
+                if (content.Images.Count > 0)
+                {
+                    sb.AppendLine($"[Images: {content.Images.Count}]");
+                }
+
+                sb.AppendLine();
+            }
+
+            await File.WriteAllTextAsync(saveDialog.FileName, sb.ToString(), Encoding.UTF8);
+        }
+
+        private async Task ExportChatDocsAsync()
+        {
+            var saveDialog = new SaveFileDialog();
+            saveDialog.Filter = "Word Document (*.docx)|*.docx";
+            saveDialog.FileName = $"Chat_{_recipient.FirstName}_{_recipient.LastName}_{DateTime.Now:yyyyMMdd}.docx";
+
+            if (saveDialog.ShowDialog() != DialogResult.OK)
+            {
+                return;
+            }
+
+            var messages = await _mainForm.GetChatHistory(_recipient.Id);
+            var exportTimestamp = DateTime.Now;
+
+            if (messages == null || messages.Count == 0)
+            {
+                PalMessageBox.Show("Aucun message à exporter pour cette conversation.");
+                return;
+            }
+
+            var items = new List<DocxItem>
+            {
+                DocxItem.Paragraph("Historique de conversation", bold: true),
+                DocxItem.Paragraph($"Entre {_currentUser.FirstName} {_currentUser.LastName} et {_recipient.FirstName} {_recipient.LastName}", bold: false),
+                DocxItem.Paragraph($"Exporté le {exportTimestamp:dd/MM/yyyy HH:mm}", bold: false),
+                DocxItem.Paragraph(string.Empty, bold: false)
+            };
+
+            foreach (var msg in messages)
+            {
+                var senderName = msg.SenderId == _currentUser.Id
+                    ? $"{_currentUser.FirstName} {_currentUser.LastName}"
+                    : $"{_recipient.FirstName} {_recipient.LastName}";
+
+                items.Add(DocxItem.Paragraph($"[{msg.Timestamp:dd/MM/yyyy HH:mm}] {senderName}", bold: true));
+
+                var content = BuildMessageExportContent(msg);
+                foreach (var line in content.Lines)
+                {
+                    items.Add(DocxItem.Paragraph(line, bold: false));
+                }
+
+                if (content.Images.Count > 0)
+                {
+                    foreach (var image in content.Images)
+                    {
+                        var prepared = PrepareDocxImage(image.Data);
+                        if (prepared != null)
+                        {
+                            items.Add(DocxItem.Image(prepared.Value.Bytes, prepared.Value.Extension, prepared.Value.Cx, prepared.Value.Cy));
+                        }
+                    }
+                }
+
+                items.Add(DocxItem.Paragraph(string.Empty, bold: false));
+            }
+
+            var docxBytes = BuildChatDocx(items, $"{_currentUser.FirstName} {_currentUser.LastName}");
+            await File.WriteAllBytesAsync(saveDialog.FileName, docxBytes);
+        }
+
+        private sealed class DocxItem
+        {
+            public string? Text { get; }
+            public bool Bold { get; }
+            public byte[]? ImageBytes { get; }
+            public string? ImageExtension { get; }
+            public long ImageCx { get; }
+            public long ImageCy { get; }
+
+            private DocxItem(string? text, bool bold, byte[]? imageBytes, string? imageExtension, long imageCx, long imageCy)
+            {
+                Text = text;
+                Bold = bold;
+                ImageBytes = imageBytes;
+                ImageExtension = imageExtension;
+                ImageCx = imageCx;
+                ImageCy = imageCy;
+            }
+
+            public static DocxItem Paragraph(string text, bool bold) => new DocxItem(text ?? string.Empty, bold, null, null, 0, 0);
+
+            public static DocxItem Image(byte[] bytes, string extension, long cx, long cy) => new DocxItem(null, false, bytes, extension, cx, cy);
+
+            public bool IsImage => ImageBytes != null && !string.IsNullOrWhiteSpace(ImageExtension);
+        }
+
+        private static (byte[] Bytes, string Extension, long Cx, long Cy)? PrepareDocxImage(byte[] rawBytes)
+        {
+            if (rawBytes == null || rawBytes.Length < 8)
+            {
+                return null;
+            }
+
+            const int defaultPx = 64;
+            const int maxPx = 128;
+
+            try
+            {
+                using var srcMs = new MemoryStream(rawBytes);
+                using var img = Image.FromStream(srcMs, useEmbeddedColorManagement: false, validateImageData: true);
+
+                int widthPx = img.Width;
+                int heightPx = img.Height;
+                if (widthPx <= 0 || heightPx <= 0)
+                {
+                    widthPx = defaultPx;
+                    heightPx = defaultPx;
+                }
+
+                double scale = Math.Min(1.0, Math.Min((double)maxPx / widthPx, (double)maxPx / heightPx));
+                int outW = Math.Max(1, (int)Math.Round(widthPx * scale));
+                int outH = Math.Max(1, (int)Math.Round(heightPx * scale));
+
+                using var bmp = new Bitmap(outW, outH);
+                using (var g = Graphics.FromImage(bmp))
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.SmoothingMode = SmoothingMode.HighQuality;
+                    g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    g.DrawImage(img, new Rectangle(0, 0, outW, outH));
+                }
+
+                using var outMs = new MemoryStream();
+                bmp.Save(outMs, System.Drawing.Imaging.ImageFormat.Png);
+                var pngBytes = outMs.ToArray();
+
+                long cx = outW * 9525L;
+                long cy = outH * 9525L;
+                return (pngBytes, "png", cx, cy);
+            }
+            catch
+            {
+                // Fallback: try to keep bytes as-is (assume png)
+                long cx = defaultPx * 9525L;
+                long cy = defaultPx * 9525L;
+                return (rawBytes, "png", cx, cy);
+            }
+        }
+
+        private static byte[] BuildChatDocx(List<DocxItem> items, string? creator)
+        {
+            using var ms = new MemoryStream();
+            using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                var imageParts = new List<(string RelId, string Path, string ContentType, string Extension, long Cx, long Cy)>();
+                int imageIndex = 0;
+
+                foreach (var item in items)
+                {
+                    if (!item.IsImage)
+                    {
+                        continue;
+                    }
+
+                    imageIndex++;
+                    var ext = item.ImageExtension!.Trim('.').ToLowerInvariant();
+                    if (ext != "png" && ext != "jpg" && ext != "jpeg")
+                    {
+                        ext = "png";
+                    }
+
+                    string contentType = ext switch
+                    {
+                        "jpg" => "image/jpeg",
+                        "jpeg" => "image/jpeg",
+                        _ => "image/png"
+                    };
+
+                    var relId = $"rIdImg{imageIndex}";
+                    var path = $"media/image{imageIndex}.{ext}";
+                    imageParts.Add((relId, path, contentType, ext, item.ImageCx, item.ImageCy));
+
+                    var entry = zip.CreateEntry($"word/{path}", CompressionLevel.Optimal);
+                    using var stream = entry.Open();
+                    stream.Write(item.ImageBytes!, 0, item.ImageBytes!.Length);
+                }
+
+                WriteZipText(zip, "[Content_Types].xml", BuildContentTypesXml(imageParts));
+                WriteZipText(zip, "_rels/.rels", BuildRootRelsXml());
+                WriteZipText(zip, "word/document.xml", BuildDocumentXml(items, imageParts));
+                WriteZipText(zip, "word/_rels/document.xml.rels", BuildDocumentRelsXml(imageParts));
+                WriteZipText(zip, "docProps/core.xml", BuildCorePropsXml(creator));
+                WriteZipText(zip, "docProps/app.xml", BuildAppPropsXml());
+            }
+
+            return ms.ToArray();
+        }
+
+        private static void WriteZipText(ZipArchive zip, string entryName, string content)
+        {
+            var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
+            using var stream = entry.Open();
+            using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            writer.Write(content);
+        }
+
+        private static string BuildContentTypesXml(List<(string RelId, string Path, string ContentType, string Extension, long Cx, long Cy)> imageParts)
+        {
+            var sb = new StringBuilder();
+            sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
+            sb.Append("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">");
+            sb.Append("<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>");
+            sb.Append("<Default Extension=\"xml\" ContentType=\"application/xml\"/>");
+
+            // Image defaults (avoid duplicates)
+            bool needsPng = imageParts.Any(p => p.Extension == "png");
+            bool needsJpeg = imageParts.Any(p => p.Extension == "jpg" || p.Extension == "jpeg");
+            if (needsPng)
+            {
+                sb.Append("<Default Extension=\"png\" ContentType=\"image/png\"/>");
+            }
+            if (needsJpeg)
+            {
+                sb.Append("<Default Extension=\"jpg\" ContentType=\"image/jpeg\"/>");
+                sb.Append("<Default Extension=\"jpeg\" ContentType=\"image/jpeg\"/>");
+            }
+
+            sb.Append("<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>");
+            sb.Append("<Override PartName=\"/docProps/core.xml\" ContentType=\"application/vnd.openxmlformats-package.core-properties+xml\"/>");
+            sb.Append("<Override PartName=\"/docProps/app.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.extended-properties+xml\"/>");
+            sb.Append("</Types>");
+            return sb.ToString();
+        }
+
+        private static string BuildRootRelsXml()
+        {
+            return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+                   "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" +
+                   "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>" +
+                   "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties\" Target=\"docProps/core.xml\"/>" +
+                   "<Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties\" Target=\"docProps/app.xml\"/>" +
+                   "</Relationships>";
+        }
+
+        private static string BuildDocumentRelsXml(List<(string RelId, string Path, string ContentType, string Extension, long Cx, long Cy)> imageParts)
+        {
+            var sb = new StringBuilder();
+            sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
+            sb.Append("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">");
+
+            foreach (var img in imageParts)
+            {
+                sb.Append($"<Relationship Id=\"{img.RelId}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"{XmlEscape(img.Path)}\"/>");
+            }
+
+            sb.Append("</Relationships>");
+            return sb.ToString();
+        }
+
+        private static string BuildCorePropsXml(string? creator)
+        {
+            var now = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            var safeCreator = XmlEscape(string.IsNullOrWhiteSpace(creator) ? "PaL.X" : creator);
+            return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+                   "<cp:coreProperties xmlns:cp=\"http://schemas.openxmlformats.org/package/2006/metadata/core-properties\"" +
+                   " xmlns:dc=\"http://purl.org/dc/elements/1.1/\"" +
+                   " xmlns:dcterms=\"http://purl.org/dc/terms/\"" +
+                   " xmlns:dcmitype=\"http://purl.org/dc/dcmitype/\"" +
+                   " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">" +
+                   $"<dc:creator>{safeCreator}</dc:creator>" +
+                   "<cp:lastModifiedBy>PaL.X</cp:lastModifiedBy>" +
+                   $"<dcterms:created xsi:type=\"dcterms:W3CDTF\">{now}</dcterms:created>" +
+                   $"<dcterms:modified xsi:type=\"dcterms:W3CDTF\">{now}</dcterms:modified>" +
+                   "</cp:coreProperties>";
+        }
+
+        private static string BuildAppPropsXml()
+        {
+            return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+                   "<Properties xmlns=\"http://schemas.openxmlformats.org/officeDocument/2006/extended-properties\"" +
+                   " xmlns:vt=\"http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes\">" +
+                   "<Application>PaL.X</Application>" +
+                   "</Properties>";
+        }
+
+        private static string BuildDocumentXml(List<DocxItem> items, List<(string RelId, string Path, string ContentType, string Extension, long Cx, long Cy)> imageParts)
+        {
+            var sb = new StringBuilder();
+            sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
+            sb.Append("<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" ");
+            sb.Append("xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" ");
+            sb.Append("xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" ");
+            sb.Append("xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" ");
+            sb.Append("xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">");
+            sb.Append("<w:body>");
+
+            int currentImageIdx = 0;
+            foreach (var item in items)
+            {
+                if (!item.IsImage)
+                {
+                    sb.Append("<w:p><w:r>");
+                    if (item.Bold)
+                    {
+                        sb.Append("<w:rPr><w:b/></w:rPr>");
+                    }
+                    sb.Append("<w:t xml:space=\"preserve\">");
+                    sb.Append(XmlEscape(item.Text ?? string.Empty));
+                    sb.Append("</w:t></w:r></w:p>");
+                    continue;
+                }
+
+                if (currentImageIdx >= imageParts.Count)
+                {
+                    continue;
+                }
+
+                var img = imageParts[currentImageIdx++];
+                var name = $"Image {currentImageIdx}";
+                var docPrId = currentImageIdx;
+
+                sb.Append("<w:p><w:r><w:drawing>");
+                sb.Append($"<wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\">");
+                sb.Append($"<wp:extent cx=\"{img.Cx}\" cy=\"{img.Cy}\"/>");
+                sb.Append("<wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/>");
+                sb.Append($"<wp:docPr id=\"{docPrId}\" name=\"{XmlEscape(name)}\"/>");
+                sb.Append("<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect=\"1\"/></wp:cNvGraphicFramePr>");
+                sb.Append("<a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">");
+                sb.Append("<pic:pic>");
+                sb.Append("<pic:nvPicPr>");
+                sb.Append($"<pic:cNvPr id=\"0\" name=\"{XmlEscape(name)}\"/>");
+                sb.Append("<pic:cNvPicPr/></pic:nvPicPr>");
+                sb.Append("<pic:blipFill>");
+                sb.Append($"<a:blip r:embed=\"{XmlEscape(img.RelId)}\"/>");
+                sb.Append("<a:stretch><a:fillRect/></a:stretch>");
+                sb.Append("</pic:blipFill>");
+                sb.Append("<pic:spPr>");
+                sb.Append("<a:xfrm>");
+                sb.Append("<a:off x=\"0\" y=\"0\"/>");
+                sb.Append($"<a:ext cx=\"{img.Cx}\" cy=\"{img.Cy}\"/>");
+                sb.Append("</a:xfrm>");
+                sb.Append("<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>");
+                sb.Append("</pic:spPr>");
+                sb.Append("</pic:pic>");
+                sb.Append("</a:graphicData></a:graphic>");
+                sb.Append("</wp:inline>");
+                sb.Append("</w:drawing></w:r></w:p>");
+            }
+
+            // Minimal section properties
+            sb.Append("<w:sectPr>");
+            sb.Append("<w:pgSz w:w=\"11906\" w:h=\"16838\"/>"); // A4
+            sb.Append("<w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\" w:header=\"720\" w:footer=\"720\" w:gutter=\"0\"/>");
+            sb.Append("</w:sectPr>");
+
+            sb.Append("</w:body></w:document>");
+            return sb.ToString();
+        }
+
+        private static string XmlEscape(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return string.Empty;
+            return value
+                .Replace("&", "&amp;")
+                .Replace("<", "&lt;")
+                .Replace(">", "&gt;")
+                .Replace("\"", "&quot;")
+                .Replace("'", "&apos;");
         }
 
         private Bitmap MakeGrayscale(Bitmap original)

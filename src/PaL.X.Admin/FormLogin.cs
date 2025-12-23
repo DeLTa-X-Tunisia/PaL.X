@@ -11,7 +11,7 @@ namespace PaL.X.Admin
     public partial class FormLogin : Form
     {
         private readonly HttpClient _httpClient;
-        private const string ApiBaseUrl = "http://localhost:5024/api";
+        private const string ApiBaseUrl = "https://localhost:5001/api";
         
         // Nouveaux contrôles pour la gestion du backend
         private Button btnToggleBackend = null!;
@@ -123,7 +123,9 @@ namespace PaL.X.Admin
 
         private void HandleBackendDown()
         {
-            if (_isBackendRunning)
+            // If it was running, mark it down.
+            // If we're in a "starting" state (button disabled), also reset UI so the user isn't stuck.
+            if (_isBackendRunning || (btnToggleBackend != null && btnToggleBackend.Enabled == false))
             {
                 _isBackendRunning = false;
                 btnToggleBackend.Text = "Démarrer Backend";

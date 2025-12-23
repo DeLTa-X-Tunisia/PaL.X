@@ -14,7 +14,7 @@ start "Admin" cmd /k "cd src\PaL.X.Admin && dotnet run"
 
 echo.
 echo Applications demarrees!
-echo - API: http://localhost:5024
+echo - API: http://localhost:5000
 echo - Client: en cours d'execution
 echo - Admin: en cours d'execution
 pause

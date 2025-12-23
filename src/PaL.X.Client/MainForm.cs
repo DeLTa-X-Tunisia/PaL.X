@@ -1,5 +1,6 @@
 using PaL.X.Client.Services;
 using PaL.X.Client.Voice;
+using PaL.X.Client.Video;
 using PaL.X.Shared.DTOs;
 using PaL.X.Shared.Enums;
 using System;
@@ -25,8 +26,8 @@ namespace PaL.X.Client
         private readonly UserData _currentUser;
         private readonly HttpClient _httpClient;
         private HubConnection _hubConnection = null!;
-        private const string ApiBaseUrl = "http://localhost:5024/api";
-        private const string HubUrl = "http://localhost:5024/hubs/pal";
+        private const string ApiBaseUrl = "https://localhost:5001/api";
+        private const string HubUrl = "https://localhost:5001/hubs/pal";
         private bool _serviceAvailable = false;
         private string _connectionId = string.Empty;
         
@@ -45,6 +46,7 @@ namespace PaL.X.Client
         private ToolStripMenuItem? _unblockMenuItem;
         private ToolStripMenuItem? _deleteMenuItem;
         private ToolStripMenuItem? _callMenuItem;
+        private ToolStripMenuItem? _videoCallMenuItem;
         private int _blockedIconIndex = -1;
         private Image? _blockNoticeIcon;
         private Image? _unblockNoticeIcon;
@@ -61,6 +63,13 @@ namespace PaL.X.Client
         private int _activeCallPeerId;
         private DateTime? _activeCallStartedAt;
     private UserStatus? _statusBeforeCall;
+
+        // Video call
+        private VideoCallService? _videoCallService;
+        private VideoCallForm? _activeVideoCallForm;
+        private string? _activeVideoCallId;
+        private int _activeVideoCallPeerId;
+        private DateTime? _activeVideoCallStartedAt;
 
         private static Image? LoadAbsoluteIcon(string path)
         {
@@ -231,6 +240,14 @@ namespace PaL.X.Client
             }
             _callMenuItem.Click += async (s, e) => await StartCallWithSelectedFriend();
 
+            _videoCallMenuItem = new ToolStripMenuItem("Appel vidéo");
+            var videoCallIcon = LoadAbsoluteIcon(@"C:\Users\azizi\OneDrive\Desktop\PaL.X\PaL.X.Assets\Context\Video_Call.png");
+            if (videoCallIcon != null)
+            {
+                _videoCallMenuItem.Image = videoCallIcon;
+            }
+            _videoCallMenuItem.Click += async (s, e) => await StartVideoCallWithSelectedFriend();
+
             itemProfile.Click += (s, e) =>
             {
                 if (lstFriends.SelectedItems.Count == 0)
@@ -258,6 +275,7 @@ namespace PaL.X.Client
             };
             contextMenu.Items.Add(itemProfile);
             contextMenu.Items.Add(_callMenuItem);
+            contextMenu.Items.Add(_videoCallMenuItem);
             lstFriends.ContextMenuStrip = contextMenu;
             lstFriends.DoubleClick += LstFriends_DoubleClick;
             lstFriends.ListViewItemSorter = new FriendListComparer();
@@ -1459,6 +1477,14 @@ namespace PaL.X.Client
                 PalMessageBox.Show($"Impossible de lancer l'appel : {ex.Message}");
             }
         }
+
+        private async Task StartVideoCallWithSelectedFriend()
+        {
+            if (lstFriends.SelectedItems.Count == 0) return;
+            if (lstFriends.SelectedItems[0].Tag is not UserProfileDto user) return;
+            
+            await StartVideoCallInternalAsync(user.Id);
+        }
         private async Task LoadFriends()
         {
             try
@@ -2157,6 +2183,261 @@ namespace PaL.X.Client
             _voiceCallService.CallAccepted += dto => SafeInvoke(() => HandleCallAccepted(dto));
             _voiceCallService.CallRejected += dto => SafeInvoke(() => HandleCallRejected(dto));
             _voiceCallService.CallEnded += dto => SafeInvoke(() => HandleCallEnded(dto));
+
+            _videoCallService = new VideoCallService(_hubConnection, _httpClient, ApiBaseUrl, _currentUser.Id);
+            _videoCallService.IncomingCall += dto => SafeInvoke(() => HandleIncomingVideoCall(dto));
+            _videoCallService.OutgoingCall += dto => SafeInvoke(() => HandleOutgoingVideoCall(dto));
+            _videoCallService.CallAccepted += dto => SafeInvoke(() => HandleVideoCallAccepted(dto));
+            _videoCallService.CallRejected += dto => SafeInvoke(() => HandleVideoCallRejected(dto));
+            _videoCallService.CallEnded += dto => SafeInvoke(() => HandleVideoCallEnded(dto));
+            _videoCallService.RtcSignalReceived += dto => SafeInvoke(() => HandleVideoRtcSignal(dto));
+        }
+
+        private void HandleIncomingVideoCall(CallInviteDto dto)
+        {
+            _activeVideoCallId = dto.CallId;
+            _activeVideoCallPeerId = dto.FromUserId;
+            _activeVideoCallStartedAt = null;
+
+            _activeVideoCallForm?.Close();
+
+            var displayName = ResolveDisplayName(dto.FromUserId, dto.FromName);
+            _activeVideoCallForm = new VideoCallForm(displayName, incoming: true);
+            WireVideoCallForm(_activeVideoCallForm, dto.CallId, dto.FromUserId, displayName);
+            _activeVideoCallForm.SetStatus("Appel vidéo entrant");
+            _activeVideoCallForm.Show();
+        }
+
+        private void HandleOutgoingVideoCall(CallInviteDto dto)
+        {
+            _activeVideoCallId = dto.CallId;
+            _activeVideoCallPeerId = dto.ToUserId;
+            _activeVideoCallStartedAt = null;
+
+            _activeVideoCallForm?.Close();
+
+            var displayName = ResolveDisplayName(dto.ToUserId, $"Utilisateur {dto.ToUserId}");
+            _activeVideoCallForm = new VideoCallForm(displayName, incoming: false);
+            WireVideoCallForm(_activeVideoCallForm, dto.CallId, dto.ToUserId, displayName);
+            _activeVideoCallForm.SetStatus("Appel vidéo en cours…");
+            _activeVideoCallForm.Show();
+
+            _ = SetInCallStatusAsync();
+        }
+
+        private void HandleVideoCallAccepted(CallAcceptDto dto)
+        {
+            if (_activeVideoCallForm != null && _activeVideoCallId == dto.CallId)
+            {
+                _activeVideoCallForm.SwitchToInCallMode();
+                _activeVideoCallForm.SetStatus("Connecté");
+
+                // Caller is initiator (ToUserId == callerId in our Accept payload)
+                var isInitiator = dto.ToUserId == _currentUser.Id;
+                _ = _activeVideoCallForm.StartWebRtcAsync(isInitiator);
+            }
+
+            _activeVideoCallStartedAt = DateTime.UtcNow;
+            _ = SetInCallStatusAsync();
+
+            // Message auto: seulement l'appelant (ToUserId) l'envoie pour éviter les doublons
+            if (dto.ToUserId == _currentUser.Id)
+            {
+                _ = SendVideoCallEventMessageAsync(_activeVideoCallPeerId, "started");
+            }
+        }
+
+        private void HandleVideoRtcSignal(VideoRtcSignalDto dto)
+        {
+            if (_activeVideoCallForm == null)
+            {
+                return;
+            }
+
+            if (_activeVideoCallId == null || !string.Equals(_activeVideoCallId, dto.CallId, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _ = _activeVideoCallForm.ApplyRemoteSignalAsync(dto.SignalType, dto.Payload);
+        }
+
+        private void HandleVideoCallRejected(CallRejectDto dto)
+        {
+            var peer = dto.FromUserId == _currentUser.Id ? dto.ToUserId : dto.FromUserId;
+            var reason = dto.Reason?.ToLowerInvariant() ?? string.Empty;
+            var displayName = ResolveDisplayName(peer, $"Utilisateur {peer}");
+
+            if (reason == "blocked")
+            {
+                PalMessageBox.Show("Vous ne pouvez pas appeler ce contact car il vous a bloqué.", "Appel vidéo bloqué", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _activeVideoCallForm?.Close();
+                _activeVideoCallForm = null;
+                _activeVideoCallId = null;
+                _activeVideoCallStartedAt = null;
+                _ = RestoreStatusAfterCallAsync();
+                return;
+            }
+
+            if (reason == "videoincall")
+            {
+                PalMessageBox.Show($"{displayName} est occupé avec un autre appel vidéo.", "Appel vidéo occupé", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _activeVideoCallForm?.SetStatus("Destinataire en appel vidéo");
+                _activeVideoCallStartedAt = null;
+                _ = RestoreStatusAfterCallAsync();
+
+                if (_activeVideoCallId == null || _activeVideoCallId == dto.CallId)
+                {
+                    _activeVideoCallForm?.Close();
+                    _activeVideoCallForm = null;
+                    _activeVideoCallId = null;
+                }
+                return;
+            }
+
+            if (reason == "incall" || reason == "in_call")
+            {
+                PalMessageBox.Show("Le destinataire est en appel, veuillez réessayer plus tard.", "Appel occupé", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _activeVideoCallForm?.SetStatus("Destinataire en appel");
+                _activeVideoCallStartedAt = null;
+                _ = RestoreStatusAfterCallAsync();
+
+                if (_activeVideoCallId == null || _activeVideoCallId == dto.CallId)
+                {
+                    _activeVideoCallForm?.Close();
+                    _activeVideoCallForm = null;
+                    _activeVideoCallId = null;
+                }
+                return;
+            }
+
+            if (_activeVideoCallId == null || _activeVideoCallId == dto.CallId)
+            {
+                _activeVideoCallForm?.Close();
+                _activeVideoCallForm = null;
+                _activeVideoCallId = null;
+                PalMessageBox.Show("Appel vidéo refusé ou indisponible");
+            }
+
+            _activeVideoCallStartedAt = null;
+            _ = RestoreStatusAfterCallAsync();
+        }
+
+        private void HandleVideoCallEnded(CallEndDto dto)
+        {
+            if (_activeVideoCallId == dto.CallId)
+            {
+                _activeVideoCallForm?.Close();
+                _activeVideoCallForm = null;
+                _activeVideoCallId = null;
+            }
+
+            var peer = dto.FromUserId == _currentUser.Id ? dto.ToUserId : dto.FromUserId;
+
+            // Message auto: seulement l'utilisateur qui a raccroché l'envoie
+            if (dto.FromUserId == _currentUser.Id)
+            {
+                _ = SendVideoCallEventMessageAsync(peer, "ended");
+            }
+
+            _activeVideoCallStartedAt = null;
+            _ = RestoreStatusAfterCallAsync();
+        }
+
+        private void WireVideoCallForm(VideoCallForm form, string callId, int peerUserId, string peerDisplayName)
+        {
+            async void SendRtc(object? _, VideoCallForm.RtcSignalToSendEventArgs e)
+            {
+                try
+                {
+                    if (_videoCallService != null)
+                    {
+                        await _videoCallService.SendRtcSignalAsync(callId, e.SignalType, e.Payload);
+                    }
+                }
+                catch
+                {
+                    // ignore transient send errors
+                }
+            }
+
+            form.RtcSignalToSend += SendRtc;
+
+            form.HangupRequested += async (_, __) =>
+            {
+                if (_videoCallService != null)
+                {
+                    await _videoCallService.HangupAsync(callId);
+                }
+                form.Close();
+                _activeVideoCallStartedAt = null;
+                _ = RestoreStatusAfterCallAsync();
+            };
+
+            form.AcceptRequested += async (_, __) =>
+            {
+                if (_videoCallService != null)
+                {
+                    await _videoCallService.AcceptAsync(callId);
+                }
+                form.SetStatus("Connexion…");
+            };
+
+            form.RejectRequested += async (_, __) =>
+            {
+                if (_videoCallService != null)
+                {
+                    await _videoCallService.RejectAsync(callId, "refused");
+                }
+                form.Close();
+                _activeVideoCallStartedAt = null;
+                _ = RestoreStatusAfterCallAsync();
+            };
+
+            form.FormClosed += (_, __) =>
+            {
+                form.RtcSignalToSend -= SendRtc;
+
+                if (_activeVideoCallForm == form)
+                {
+                    _activeVideoCallForm = null;
+                }
+            };
+        }
+
+        private async Task SendVideoCallEventMessageAsync(int peerUserId, string eventType)
+        {
+            try
+            {
+                if (_hubConnection == null)
+                {
+                    return;
+                }
+
+                var payload = new VideoCallEventDto
+                {
+                    EventType = eventType,
+                    AtUtc = DateTime.UtcNow
+                };
+
+                var msg = new ChatMessageDto
+                {
+                    MessageId = 0,
+                    SenderId = _currentUser.Id,
+                    SenderName = _currentUser.Username ?? "Moi",
+                    ReceiverId = peerUserId,
+                    Content = JsonSerializer.Serialize(payload),
+                    ContentType = "video_call_event",
+                    Timestamp = DateTime.UtcNow,
+                    IsEdited = false
+                };
+
+                await _hubConnection.InvokeAsync("SendPrivateMessage", msg);
+            }
+            catch
+            {
+                // ignore
+            }
         }
 
         private void SafeInvoke(Action action)
@@ -2356,7 +2637,7 @@ namespace PaL.X.Client
                 return;
             }
 
-            if (reason == "incall" || reason == "in_call")
+            if (reason == "incall" || reason == "in_call" || reason == "videoincall")
             {
                 _activeCallForm?.SetStatus("Destinataire en appel");
                 PalMessageBox.Show("Le destinataire est en appel, veuillez réessayer plus tard.", "Appel occupé", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -2506,6 +2787,12 @@ namespace PaL.X.Client
                 return;
             }
 
+            if (_activeVideoCallId != null)
+            {
+                PalMessageBox.Show("Vous êtes déjà en appel vidéo.", "Appel", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
             if (_blockedByOthers.TryGetValue(peerUserId, out var remoteBlock) && remoteBlock.IsBlocked)
             {
                 PalMessageBox.Show("Vous ne pouvez pas appeler ce contact car il vous a bloqué.", "Appel bloqué", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -2522,6 +2809,49 @@ namespace PaL.X.Client
             catch (Exception ex)
             {
                 PalMessageBox.Show($"Impossible de lancer l'appel : {ex.Message}");
+            }
+        }
+
+        public Task StartVideoCall(int peerUserId)
+        {
+            return StartVideoCallInternalAsync(peerUserId);
+        }
+
+        private async Task StartVideoCallInternalAsync(int peerUserId)
+        {
+            if (_videoCallService == null)
+            {
+                PalMessageBox.Show("Le service d'appel vidéo n'est pas prêt.");
+                return;
+            }
+
+            // Empêcher tout autre appel pendant une session vidéo
+            if (_activeCallId != null)
+            {
+                PalMessageBox.Show("Terminez l'appel vocal en cours avant de lancer un appel vidéo.", "Appel", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_activeVideoCallId != null)
+            {
+                PalMessageBox.Show("Vous êtes déjà en appel vidéo.", "Appel vidéo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_blockedByOthers.TryGetValue(peerUserId, out var remoteBlock) && remoteBlock.IsBlocked)
+            {
+                PalMessageBox.Show("Vous ne pouvez pas appeler ce contact car il vous a bloqué.", "Appel vidéo bloqué", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            _activeVideoCallPeerId = peerUserId;
+            try
+            {
+                await _videoCallService.InviteAsync(peerUserId);
+            }
+            catch (Exception ex)
+            {
+                PalMessageBox.Show($"Impossible de lancer l'appel vidéo : {ex.Message}");
             }
         }
 
