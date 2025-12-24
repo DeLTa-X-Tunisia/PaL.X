@@ -89,6 +89,8 @@ namespace PaL.X.Client
         public MainForm()
         {
             InitializeComponent();
+            if (DesignMode) return;
+
             _authToken = string.Empty;
             _currentUser = new UserData();
             _httpClient = new HttpClient();

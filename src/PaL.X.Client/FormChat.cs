@@ -28,6 +28,8 @@ using System.Threading.Tasks;
 using NAudio.Wave;
 using NAudio.MediaFoundation;
 using PaL.X.Client.Voice;
+using Microsoft.Web.WebView2.WinForms;
+using Microsoft.Web.WebView2.Core;
 
 namespace PaL.X.Client
 {
@@ -44,6 +46,7 @@ namespace PaL.X.Client
         private readonly UserData _currentUser;
         private readonly MainForm _mainForm;
 
+        private WebView2 webViewChat = null!;
         private RichTextBox rtbInput = null!;
         private Button btnSend = null!;
         private Label lblStatus = null!;
@@ -112,6 +115,9 @@ namespace PaL.X.Client
         // Global correlation to deduplicate sender bubbles
         private readonly Dictionary<string, ChatMessageControl> _pendingByTempId = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _completedTempIds = new(StringComparer.OrdinalIgnoreCase);
+        
+        // Deduplication for WebView messages
+        private readonly HashSet<string> _pendingWebMessages = new(StringComparer.OrdinalIgnoreCase);
 
         private readonly Dictionary<ChatMessageControl, (DateTime lastUpdate, int lastPercent)> _progressCache = new();
 
@@ -179,10 +185,200 @@ namespace PaL.X.Client
             _currentUser = new UserData();
             _mainForm = null!;
             InitializeComponent();
+            InitializeWebView();
             InitializeVoiceComponents();
             UpdateHeaderUI();
             _lastRecipientStatus = _recipient.CurrentStatus;
             ApplyInitialRecipientState();
+        }
+
+        private async void InitializeWebView()
+        {
+            // Hide legacy controls
+            if (flpHistory != null) flpHistory.Visible = false;
+            if (rtbInput != null && rtbInput.Parent != null) rtbInput.Parent.Visible = false;
+            
+            // Initialize WebView2
+            webViewChat = new WebView2();
+            webViewChat.Dock = DockStyle.Fill;
+            this.Controls.Add(webViewChat);
+            
+            // Ensure WebView2 is behind the header but in front of everything else
+            webViewChat.BringToFront();
+            
+            await webViewChat.EnsureCoreWebView2Async();
+
+            // Map assets
+            string assetsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets");
+            if (!Directory.Exists(assetsPath)) Directory.CreateDirectory(assetsPath);
+            
+            webViewChat.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                "assets.pal.x", 
+                assetsPath, 
+                CoreWebView2HostResourceAccessKind.Allow
+            );
+
+            // Map smileys (Direct path for testing)
+            string smileysPath = @"C:\Users\azizi\OneDrive\Desktop\PaL.X\PaL.X.Assets\Smiley";
+            if (!Directory.Exists(smileysPath)) Directory.CreateDirectory(smileysPath);
+
+            webViewChat.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                "smileys.pal.x", 
+                smileysPath, 
+                CoreWebView2HostResourceAccessKind.Allow
+            );
+
+            // Setup communication
+            webViewChat.CoreWebView2.WebMessageReceived += WebView_WebMessageReceived;
+
+            // Load Chat UI
+            string htmlPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wwwroot", "chat", "index.html");
+            if (File.Exists(htmlPath))
+            {
+                webViewChat.Source = new Uri(htmlPath);
+            }
+            else
+            {
+                MessageBox.Show($"Fichier introuvable: {htmlPath}");
+            }
+        }
+
+        private void WebView_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+        {
+            try
+            {
+                // Use WebMessageAsJson to handle both JSON objects and strings correctly
+                string json = e.WebMessageAsJson;
+                
+                // Debug: Uncomment to see raw traffic
+                // System.Diagnostics.Debug.WriteLine($"WebView Message: {json}");
+
+                var message = JsonSerializer.Deserialize<JsonElement>(json);
+                
+                if (message.TryGetProperty("type", out var typeProp))
+                {
+                    string type = typeProp.GetString() ?? "";
+                    if (type == "sendMessage")
+                    {
+                        if (message.TryGetProperty("content", out var contentProp))
+                        {
+                            string content = contentProp.GetString() ?? "";
+                            _ = SendMessageFromWebAsync(content);
+                        }
+                    }
+                    else if (type == "requestSmileys")
+                    {
+                        SendSmileyListToWeb();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"WebView Error: {ex.Message}");
+                // MessageBox.Show($"Erreur réception message: {ex.Message}");
+            }
+        }
+
+        private void SendSmileyListToWeb()
+        {
+            try
+            {
+                // Use the specific assets folder requested
+                string smileysPath = @"C:\Users\azizi\OneDrive\Desktop\PaL.X\PaL.X.Assets\Smiley";
+                
+                if (!Directory.Exists(smileysPath)) 
+                {
+                    // MessageBox.Show($"Dossier smileys introuvable: {smileysPath}");
+                    return;
+                }
+
+                var smileyData = new Dictionary<string, List<string>>();
+                
+                // Load files directly from this folder into a "Défaut" category
+                var files = Directory.GetFiles(smileysPath, "*.*")
+                    .Where(f => f.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || 
+                                f.EndsWith(".gif", StringComparison.OrdinalIgnoreCase) ||
+                                f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase))
+                    .Select(f => Path.GetFileName(f))
+                    .Where(f => !string.IsNullOrEmpty(f))
+                    .Cast<string>()
+                    .ToList();
+
+                if (files.Count > 0)
+                {
+                    smileyData["Défaut"] = files;
+                }
+                else 
+                {
+                     // MessageBox.Show($"Aucun fichier image trouvé dans : {smileysPath}");
+                }
+
+                var payload = new { type = "loadSmileys", payload = smileyData };
+                string json = JsonSerializer.Serialize(payload);
+                
+                webViewChat.CoreWebView2.PostWebMessageAsJson(json);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error loading smileys: {ex.Message}");
+                MessageBox.Show($"Erreur smileys: {ex.Message}");
+            }
+        }
+
+        private async Task SendMessageFromWebAsync(string htmlContent)
+        {
+             if (_inputLockedByDnd || _inputLockedByBlock || _isBlockedByMe || _isBlockedByRemote)
+                return;
+
+            if (string.IsNullOrWhiteSpace(htmlContent)) return;
+
+            var msg = new ChatMessageDto
+            {
+                SenderId = _currentUser.Id,
+                SenderName = !string.IsNullOrWhiteSpace(_currentUser.FirstName) 
+                    ? $"{_currentUser.FirstName} {_currentUser.LastName}" 
+                    : _currentUser.Username,
+                ReceiverId = _recipient.Id,
+                Content = htmlContent, 
+                ContentType = "HTML", 
+                Timestamp = DateTime.UtcNow,
+                SmileyFilenames = new List<string>(),
+                ClientTempId = Guid.NewGuid().ToString()
+            };
+
+            // Register as pending to avoid duplicate when SignalR echoes it back
+            if (!string.IsNullOrEmpty(msg.ClientTempId))
+            {
+                _pendingWebMessages.Add(msg.ClientTempId);
+            }
+
+            try
+            {
+                await _mainForm.SendPrivateMessage(msg);
+                AddMessageToWebView(msg, isMe: true);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Erreur d'envoi: {ex.Message}");
+            }
+        }
+
+        private void AddMessageToWebView(ChatMessageDto msg, bool isMe)
+        {
+            if (webViewChat == null || webViewChat.CoreWebView2 == null) return;
+
+            var payload = new { 
+                type = "newMessage", 
+                payload = new { 
+                    id = msg.MessageId, 
+                    content = msg.Content, 
+                    isMe = isMe, 
+                    timestamp = msg.Timestamp.ToLocalTime().ToString("HH:mm") 
+                } 
+            };
+            
+            string json = JsonSerializer.Serialize(payload);
+            webViewChat.CoreWebView2.PostWebMessageAsJson(json);
         }
 
         private void InitializeVoiceComponents()
@@ -660,6 +856,7 @@ namespace PaL.X.Client
             _currentUser = currentUser;
             _mainForm = mainForm;
             InitializeComponent();
+            InitializeWebView();
             InitializeVoiceComponents();
             UpdateHeader();
             _lastRecipientStatus = _recipient.CurrentStatus;
@@ -1326,35 +1523,26 @@ namespace PaL.X.Client
                 messages = messages.Skip(messages.Count - InitialHistoryLimit).ToList();
             }
 
-            flpHistory.SuspendLayout();
-            var previousAutoScroll = flpHistory.AutoScroll;
-            var restoreVisibility = flpHistory.Visible;
-            flpHistory.AutoScroll = false;
-            flpHistory.Visible = false;
+            // Send history to WebView
+            var historyPayload = messages.Select(msg => new {
+                id = msg.MessageId,
+                content = msg.Content,
+                isMe = msg.SenderId == _currentUser.Id,
+                timestamp = msg.Timestamp.ToLocalTime().ToString("HH:mm")
+            }).ToList();
 
-            try
+            var payload = new { type = "loadHistory", payload = historyPayload };
+            string json = JsonSerializer.Serialize(payload);
+            if (webViewChat != null && webViewChat.CoreWebView2 != null)
             {
-                int processed = 0;
-                foreach (var msg in messages)
-                {
-                    bool isMe = msg.SenderId == _currentUser.Id;
-                    AppendMessage(msg, isMe, autoScroll: false);
-
-                    processed++;
-                    if (processed % 20 == 0)
-                    {
-                        await Task.Yield();
-                    }
-                }
-            }
-            finally
-            {
-                flpHistory.AutoScroll = previousAutoScroll;
-                flpHistory.ResumeLayout(true);
-                flpHistory.Visible = restoreVisibility;
+                webViewChat.CoreWebView2.PostWebMessageAsJson(json);
             }
 
-            ScrollHistoryToBottom();
+            foreach (var msg in messages)
+            {
+                RegisterLoadedMessage(msg);
+            }
+
             UpdateLoadOlderVisibility();
             UpdateDeleteHistoryButtonIcon();
         }
@@ -3245,6 +3433,10 @@ namespace PaL.X.Client
 
             var msgControl = CreateMessageControl(msg, isMe);
             flpHistory.Controls.Add(msgControl);
+            
+            // Add to WebView
+            AddMessageToWebView(msg, isMe);
+
             UpdateDeleteHistoryButtonIcon();
             if (autoScroll)
             {
@@ -3451,6 +3643,13 @@ namespace PaL.X.Client
 
             if (_completedTempIds.Contains(msg.ClientTempId))
             {
+                return true;
+            }
+
+            // Check for WebView pending messages
+            if (_pendingWebMessages.Contains(msg.ClientTempId))
+            {
+                _pendingWebMessages.Remove(msg.ClientTempId);
                 return true;
             }
 

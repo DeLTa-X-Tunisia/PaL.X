@@ -78,61 +78,49 @@ namespace PaL.X.Admin
             this.lblChecklist.Size = new System.Drawing.Size(150, 100);
             this.lblChecklist.Text = "Champs manquants:\n- Prénom\n- Nom\n- Pseudo\n- Date de naissance\n- Genre\n- Pays";
 
-            // Controls Layout
-            int y = 100;
-            int labelX = 20;
-            int controlX = 150;
-            int gap = 40;
-
             // FirstName
-            this.lblFirstName.Location = new System.Drawing.Point(labelX, y);
+            this.lblFirstName.Location = new System.Drawing.Point(20, 100);
             this.lblFirstName.Text = "Prénom *";
-            this.txtFirstName.Location = new System.Drawing.Point(controlX, y);
+            this.txtFirstName.Location = new System.Drawing.Point(150, 100);
             this.txtFirstName.Size = new System.Drawing.Size(180, 23);
             this.txtFirstName.TextChanged += new System.EventHandler(this.Input_Changed);
-            y += gap;
 
             // LastName
-            this.lblLastName.Location = new System.Drawing.Point(labelX, y);
+            this.lblLastName.Location = new System.Drawing.Point(20, 140);
             this.lblLastName.Text = "Nom *";
-            this.txtLastName.Location = new System.Drawing.Point(controlX, y);
+            this.txtLastName.Location = new System.Drawing.Point(150, 140);
             this.txtLastName.Size = new System.Drawing.Size(180, 23);
             this.txtLastName.TextChanged += new System.EventHandler(this.Input_Changed);
-            y += gap;
 
             // DisplayedName
-            this.lblDisplayedName.Location = new System.Drawing.Point(labelX, y);
+            this.lblDisplayedName.Location = new System.Drawing.Point(20, 180);
             this.lblDisplayedName.Text = "Pseudo *";
-            this.txtDisplayedName.Location = new System.Drawing.Point(controlX, y);
+            this.txtDisplayedName.Location = new System.Drawing.Point(150, 180);
             this.txtDisplayedName.Size = new System.Drawing.Size(180, 23);
             this.txtDisplayedName.TextChanged += new System.EventHandler(this.Input_Changed);
-            y += gap;
 
             // DateOfBirth
-            this.lblDateOfBirth.Location = new System.Drawing.Point(labelX, y);
+            this.lblDateOfBirth.Location = new System.Drawing.Point(20, 220);
             this.lblDateOfBirth.Text = "Date de naissance *";
-            this.dtpDateOfBirth.Location = new System.Drawing.Point(controlX, y);
+            this.dtpDateOfBirth.Location = new System.Drawing.Point(150, 220);
             this.dtpDateOfBirth.Size = new System.Drawing.Size(180, 23);
             this.dtpDateOfBirth.Format = System.Windows.Forms.DateTimePickerFormat.Short;
             this.dtpDateOfBirth.ValueChanged += new System.EventHandler(this.Input_Changed);
-            y += gap;
 
             // Gender
-            this.lblGender.Location = new System.Drawing.Point(labelX, y);
+            this.lblGender.Location = new System.Drawing.Point(20, 260);
             this.lblGender.Text = "Genre *";
-            this.cmbGender.Location = new System.Drawing.Point(controlX, y);
+            this.cmbGender.Location = new System.Drawing.Point(150, 260);
             this.cmbGender.Size = new System.Drawing.Size(180, 23);
             this.cmbGender.Items.AddRange(new object[] { "Homme", "Femme", "Autre" });
             this.cmbGender.SelectedIndexChanged += new System.EventHandler(this.Input_Changed);
-            y += gap;
 
             // Country
-            this.lblCountry.Location = new System.Drawing.Point(labelX, y);
+            this.lblCountry.Location = new System.Drawing.Point(20, 300);
             this.lblCountry.Text = "Pays *";
-            this.txtCountry.Location = new System.Drawing.Point(controlX, y);
+            this.txtCountry.Location = new System.Drawing.Point(150, 300);
             this.txtCountry.Size = new System.Drawing.Size(180, 23);
             this.txtCountry.TextChanged += new System.EventHandler(this.Input_Changed);
-            y += gap;
 
             // Profile Picture
             this.pbProfilePicture.Location = new System.Drawing.Point(350, 100);
@@ -146,7 +134,7 @@ namespace PaL.X.Admin
             this.btnBrowsePhoto.Click += new System.EventHandler(this.btnBrowsePhoto_Click);
 
             // Save Button
-            this.btnSave.Location = new System.Drawing.Point(controlX, y + 20);
+            this.btnSave.Location = new System.Drawing.Point(150, 360);
             this.btnSave.Size = new System.Drawing.Size(180, 40);
             this.btnSave.Text = "Enregistrer et Continuer";
             this.btnSave.Enabled = false;

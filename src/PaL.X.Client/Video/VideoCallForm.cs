@@ -9,24 +9,9 @@ using Microsoft.Web.WebView2.WinForms;
 
 namespace PaL.X.Client.Video
 {
-    public class VideoCallForm : Form
+    public partial class VideoCallForm : Form
     {
-        private readonly Label _lblName = new();
-        private readonly Label _lblStatus = new();
-
-        private readonly Panel _videoHost = new();
-        private readonly WebView2 _webView = new();
         private readonly TaskCompletionSource<bool> _pageReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        private readonly Button _btnCam = new();
-        private readonly Button _btnMic = new();
-        private readonly Button _btnHangup = new();
-        private readonly Button _btnAccept = new();
-        private readonly Button _btnReject = new();
-
-        private readonly ToolTip _tt = new();
-
-        private FlowLayoutPanel? _buttonsPanel;
 
         private bool _micOn = true;
         private bool _camOn = true;
@@ -60,22 +45,18 @@ namespace PaL.X.Client.Video
 
         public VideoCallForm(string peerName, bool incoming)
         {
-            Text = "Appel vidéo";
-            BackColor = Color.FromArgb(20, 20, 20); // Dark background
-            ForeColor = Color.White;
-            StartPosition = FormStartPosition.CenterScreen;
-            FormBorderStyle = FormBorderStyle.Sizable; // Allow resizing
-            MinimumSize = new Size(600, 400);
-            Size = new Size(900, 600);
-            Icon = null; // Or set a specific icon if available
+            InitializeComponent();
 
-            _tt.ShowAlways = true;
+            // DesignMode check to prevent crashes in Visual Studio Designer
+            if (DesignMode) return;
 
             _incoming = incoming;
             _inCall = !incoming;
 
+            _lblName.Text = peerName;
+
             LoadAssets();
-            BuildLayout(peerName);
+            SetupButtons();
             UpdateButtonsUi();
 
             Shown += async (_, __) =>
@@ -94,6 +75,22 @@ namespace PaL.X.Client.Video
             {
                 _lblStatus.Text = "Appel vidéo entrant...";
                 _lblStatus.ForeColor = Color.FromArgb(54, 179, 126); // Green accent
+                
+                // Show incoming buttons, hide others
+                _btnAccept.Visible = true;
+                _btnReject.Visible = true;
+                _btnMic.Visible = false;
+                _btnHangup.Visible = false;
+                _btnCam.Visible = false;
+            }
+            else
+            {
+                // Show call buttons
+                _btnAccept.Visible = false;
+                _btnReject.Visible = false;
+                _btnMic.Visible = true;
+                _btnHangup.Visible = true;
+                _btnCam.Visible = true;
             }
         }
 
@@ -126,154 +123,43 @@ namespace PaL.X.Client.Video
             }
         }
 
-        private void BuildLayout(string peerName)
+        private void SetupButtons()
         {
-            // Main Layout Container (TableLayoutPanel) to prevent overlap
-            var mainLayout = new TableLayoutPanel
+            // Wire events
+            _btnCam.Click += (_, __) => ToggleCam();
+            _btnMic.Click += (_, __) => ToggleMic();
+            _btnHangup.Click += (_, __) => HangupRequested?.Invoke(this, EventArgs.Empty);
+            _btnAccept.Click += (_, __) => AcceptRequested?.Invoke(this, EventArgs.Empty);
+            _btnReject.Click += (_, __) => RejectRequested?.Invoke(this, EventArgs.Empty);
+
+            // Set Tooltips
+            _tt.SetToolTip(_btnCam, "Caméra");
+            _tt.SetToolTip(_btnMic, "Micro");
+            _tt.SetToolTip(_btnHangup, "Raccrocher");
+            _tt.SetToolTip(_btnAccept, "Accepter");
+            _tt.SetToolTip(_btnReject, "Refuser");
+
+            // Apply Circular Region
+            void MakeCircular(Button btn)
             {
-                Dock = DockStyle.Fill,
-                ColumnCount = 1,
-                RowCount = 3,
-                BackColor = Color.Black
-            };
-            mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 60F)); // Header
-            mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F)); // Video
-            mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 100F)); // Bottom Bar
-
-            // Header Panel
-            var headerPanel = new Panel
-            {
-                Dock = DockStyle.Fill,
-                BackColor = Color.Transparent,
-                Padding = new Padding(20, 10, 20, 0)
-            };
-
-            _lblName.Text = peerName;
-            _lblName.Font = new Font("Segoe UI", 14, FontStyle.Bold);
-            _lblName.ForeColor = Color.White;
-            _lblName.AutoSize = true;
-            _lblName.Location = new Point(20, 10);
-
-            _lblStatus.Text = "Connexion…";
-            _lblStatus.Font = new Font("Segoe UI", 10, FontStyle.Regular);
-            _lblStatus.ForeColor = Color.FromArgb(180, 180, 180);
-            _lblStatus.AutoSize = true;
-            _lblStatus.Location = new Point(22, 38);
-
-            headerPanel.Controls.Add(_lblName);
-            headerPanel.Controls.Add(_lblStatus);
-
-            // Video Host
-            _videoHost.Dock = DockStyle.Fill;
-            _videoHost.BackColor = Color.Black;
-            _videoHost.Padding = new Padding(0);
-            
-            _webView.Dock = DockStyle.Fill;
-            _videoHost.Controls.Add(_webView);
-
-            // Bottom Controls Bar
-            var bottomBar = new Panel
-            {
-                Dock = DockStyle.Fill,
-                BackColor = Color.FromArgb(20, 20, 20) // Dark background matching theme
-            };
-
-            // Center container for buttons
-            var buttonsContainer = new FlowLayoutPanel
-            {
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                BackColor = Color.Transparent,
-                Anchor = AnchorStyles.None
-            };
-            
-            // Using a TableLayoutPanel to center the FlowLayoutPanel inside the bottom bar
-            var centeringTable = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 3,
-                RowCount = 1,
-                BackColor = Color.Transparent
-            };
-            centeringTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
-            centeringTable.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            centeringTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
-            centeringTable.Controls.Add(buttonsContainer, 1, 0);
-
-            bottomBar.Controls.Add(centeringTable);
-
-            // Configure Buttons
-            ConfigureIconButton(_btnCam, _imgCamOn, "Caméra", (_, __) => ToggleCam(), isSecondary: true);
-            ConfigureIconButton(_btnMic, _imgMicOn, "Micro", (_, __) => ToggleMic(), isSecondary: true);
-
-            ConfigureIconButton(_btnHangup, _imgHangup, "Raccrocher", (_, __) => HangupRequested?.Invoke(this, EventArgs.Empty), isDanger: true);
-            
-            ConfigureIconButton(_btnAccept, _imgCalling, "Accepter", (_, __) => AcceptRequested?.Invoke(this, EventArgs.Empty), isSuccess: true);
-            ConfigureIconButton(_btnReject, _imgHangup, "Refuser", (_, __) => RejectRequested?.Invoke(this, EventArgs.Empty), isDanger: true);
-
-            if (_incoming)
-            {
-                buttonsContainer.Controls.Add(_btnAccept);
-                buttonsContainer.Controls.Add(_btnReject);
-            }
-            else
-            {
-                buttonsContainer.Controls.Add(_btnMic);
-                buttonsContainer.Controls.Add(_btnHangup);
-                buttonsContainer.Controls.Add(_btnCam);
+                btn.Paint += (s, e) =>
+                {
+                    using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                    path.AddEllipse(0, 0, btn.Width, btn.Height);
+                    btn.Region = new Region(path);
+                };
             }
 
-            _buttonsPanel = buttonsContainer;
+            MakeCircular(_btnCam);
+            MakeCircular(_btnMic);
+            MakeCircular(_btnHangup);
+            MakeCircular(_btnAccept);
+            MakeCircular(_btnReject);
 
-            // Add to Main Layout
-            mainLayout.Controls.Add(headerPanel, 0, 0);
-            mainLayout.Controls.Add(_videoHost, 0, 1);
-            mainLayout.Controls.Add(bottomBar, 0, 2);
-
-            Controls.Add(mainLayout);
-        }
-
-        private void ConfigureIconButton(Button btn, Image? icon, string tooltip, EventHandler onClick, bool isDanger = false, bool isSuccess = false, bool isSecondary = false)
-        {
-            btn.Text = string.Empty;
-            btn.Image = icon;
-            btn.ImageAlign = ContentAlignment.MiddleCenter;
-            btn.AutoSize = false;
-            btn.Size = new Size(60, 60);
-            btn.FlatStyle = FlatStyle.Flat;
-            btn.FlatAppearance.BorderSize = 0;
-            btn.Cursor = Cursors.Hand;
-            
-            // Colors
-            if (isDanger)
-            {
-                btn.BackColor = Color.FromArgb(235, 87, 87); // Red
-                btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(200, 50, 50);
-            }
-            else if (isSuccess)
-            {
-                btn.BackColor = Color.FromArgb(39, 174, 96); // Green
-                btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(30, 150, 80);
-            }
-            else
-            {
-                btn.BackColor = Color.FromArgb(60, 60, 60); // Dark Gray
-                btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(80, 80, 80);
-            }
-
-            btn.Margin = new Padding(15, 15, 15, 15); // Spacing between buttons
-            btn.Click += onClick;
-            _tt.SetToolTip(btn, tooltip);
-
-            // Make it circular
-            btn.Paint += (s, e) =>
-            {
-                using var path = new System.Drawing.Drawing2D.GraphicsPath();
-                path.AddEllipse(0, 0, btn.Width, btn.Height);
-                btn.Region = new Region(path);
-            };
+            // Set initial images for static buttons
+            _btnHangup.Image = _imgHangup;
+            _btnAccept.Image = _imgCalling;
+            _btnReject.Image = _imgHangup;
         }
 
         private void ToggleMic()
@@ -306,17 +192,19 @@ namespace PaL.X.Client.Video
             _lblStatus.Text = "En appel";
             _lblStatus.ForeColor = Color.FromArgb(39, 174, 96); // Green status
 
-            if (_incoming && _buttonsPanel != null)
-            {
-                _buttonsPanel.Controls.Clear();
-                _buttonsPanel.Controls.Add(_btnMic);
-                _buttonsPanel.Controls.Add(_btnHangup);
-                _buttonsPanel.Controls.Add(_btnCam);
-            }
+            // Update visibility
+            _btnAccept.Visible = false;
+            _btnReject.Visible = false;
+            
+            _btnMic.Visible = true;
+            _btnHangup.Visible = true;
+            _btnCam.Visible = true;
         }
 
         private async Task InitializeWebViewAsync()
         {
+            if (DesignMode) return;
+
             await _webView.EnsureCoreWebView2Async();
             if (_webView.CoreWebView2 == null)
             {
@@ -434,15 +322,6 @@ namespace PaL.X.Client.Video
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             base.OnFormClosed(e);
-
-            try
-            {
-                _webView.Dispose();
-            }
-            catch
-            {
-                // ignore
-            }
 
             _imgCamOn?.Dispose();
             _imgCamOff?.Dispose();

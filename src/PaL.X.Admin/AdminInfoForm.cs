@@ -19,9 +19,20 @@ namespace PaL.X.Admin
         private const string ApiBaseUrl = "https://localhost:5001/api";
         private byte[]? _profilePictureBytes;
 
+        // Constructeur pour le Designer
+        public AdminInfoForm()
+        {
+            InitializeComponent();
+            _authToken = string.Empty;
+            _currentUser = new UserData();
+            _httpClient = new HttpClient();
+        }
+
         public AdminInfoForm(string authToken, UserData currentUser)
         {
             InitializeComponent();
+            if (DesignMode) return;
+
             _authToken = authToken;
             _currentUser = currentUser;
 
